@@ -6,45 +6,116 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.ArrayAdapter
 import android.widget.CheckBox
-import android.widget.Toast
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.view.View
+import android.view.ViewGroup
 
 class RouterActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("router_settings", MODE_PRIVATE) }
+
+    private data class Player(val id: String, val label: String, val packageName: String)
+
+    private val knownPlayers = listOf(
+        Player("vlc", "VLC", "org.videolan.vlc"),
+        Player("mpv", "mpv-android", "is.xyz.mpv"),
+        Player("just", "Just+ Player", "pl.waskysoft.player")
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val uri = intent?.data ?: run { finish(); return }
         if (uri.scheme?.lowercase() !in listOf("http", "https")) { finish(); return }
         val path = uri.path?.lowercase().orEmpty()
-        val isHls = path.endsWith(".m3u8") || path.endsWith("master.txt")
-        if (!isHls) {
+        if (!(path.endsWith(".m3u8") || path.endsWith("master.txt"))) {
             launchBrowser(uri)
             finish()
             return
         }
+        val players = availablePlayers(uri)
         val saved = prefs.getString("default_player", null)
-        if (saved != null && launchPlayer(saved, uri)) {
+        if (saved != null && players.any { it.id == saved } && launchPlayer(saved, uri)) {
             finish()
         } else {
-            showPlayerDialog(uri)
+            showPlayerDialog(uri, players)
         }
     }
 
-    private fun showPlayerDialog(uri: Uri) {
-        val ids = arrayOf("vlc", "mpv", "just")
-        val names = arrayOf("VLC", "mpv-android", "Just+ Player (may not play master.txt)")
+    private fun availablePlayers(uri: Uri): List<Player> {
+        val pm = packageManager
+        val found = linkedMapOf<String, Player>()
+        // Preserve the known, tested launch paths even when a player does not
+        // advertise HLS intent filters.
+        for (p in knownPlayers) {
+            try {
+                @Suppress("DEPRECATION")
+                pm.getApplicationInfo(p.packageName, 0)
+                found[p.id] = p
+            } catch (_: android.content.pm.PackageManager.NameNotFoundException) { }
+        }
+        // Discover other installed applications that advertise HLS/video support.
+        val probes = listOf("application/vnd.apple.mpegurl", "video/*")
+        for (mime in probes) {
+            val probe = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addCategory(Intent.CATEGORY_DEFAULT)
+            }
+            @Suppress("DEPRECATION")
+            val matches = pm.queryIntentActivities(probe, 0)
+            for (match in matches) {
+                val pkg = match.activityInfo?.packageName ?: continue
+                if (pkg == packageName || pkg == "mark.via.gp" || found.values.any { it.packageName == pkg }) continue
+                found[pkg] = Player(pkg, match.loadLabel(pm).toString(), pkg)
+            }
+        }
+        return found.values.toList()
+    }
+
+    private fun showPlayerDialog(uri: Uri, players: List<Player>) {
+        if (players.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setMessage("No compatible video player found.")
+                .setPositiveButton("OK") { _, _ -> finish() }
+                .setOnCancelListener { finish() }
+                .show()
+            return
+        }
         val remember = CheckBox(this).apply {
             text = "Always use selected player"
             setPadding(24, 12, 24, 12)
             isFocusable = true
         }
+        val adapter = object : ArrayAdapter<Player>(this, android.R.layout.simple_list_item_1, players) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val row = LinearLayout(this@RouterActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(24, 12, 24, 12)
+                    minimumHeight = 72
+                }
+                val player = players[position]
+                val icon = ImageView(this@RouterActivity).apply {
+                    try { setImageDrawable(packageManager.getApplicationIcon(player.packageName)) }
+                    catch (_: Exception) { setImageResource(android.R.drawable.ic_media_play) }
+                    layoutParams = LinearLayout.LayoutParams(48, 48).apply { rightMargin = 20 }
+                }
+                row.addView(icon)
+                row.addView(TextView(this@RouterActivity).apply {
+                    text = player.label + if (player.id == "just" && uri.path?.endsWith("master.txt") == true) " (master.txt may fail)" else ""
+                    textSize = 18f
+                })
+                return row
+            }
+        }
         AlertDialog.Builder(this)
             .setTitle("Open video with")
-            .setSingleChoiceItems(names, -1) { dialog, which ->
-                val id = ids[which]
-                if (launchPlayer(id, uri)) {
-                    if (remember.isChecked) prefs.edit().putString("default_player", id).apply()
+            .setAdapter(adapter) { dialog, which ->
+                val p = players[which]
+                if (launchPlayer(p.id, uri)) {
+                    if (remember.isChecked) prefs.edit().putString("default_player", p.id).apply()
                     dialog.dismiss()
                     finish()
                 }
@@ -72,14 +143,17 @@ class RouterActivity : Activity() {
                     setClassName("pl.waskysoft.player", "com.brouken.player.PlayerActivity")
                     setDataAndType(uri, "application/vnd.apple.mpegurl")
                 }
-                else -> return false
+                else -> {
+                    setPackage(id)
+                    setDataAndType(uri, "application/vnd.apple.mpegurl")
+                }
             }
         }
         return try {
             startActivity(playerIntent)
             true
         } catch (e: Exception) {
-            Toast.makeText(this, "Cannot open $id: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(this, "Cannot open player: ${e.javaClass.simpleName}", android.widget.Toast.LENGTH_LONG).show()
             false
         }
     }
@@ -87,8 +161,8 @@ class RouterActivity : Activity() {
     private fun launchBrowser(uri: Uri) {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("mark.via.gp"))
-        } catch (e: ActivityNotFoundException) {
-            Toast.makeText(this, "Via Browser not installed", Toast.LENGTH_LONG).show()
+        } catch (_: ActivityNotFoundException) {
+            android.widget.Toast.makeText(this, "Via Browser not installed", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 }

@@ -3,12 +3,20 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.apple.mpegurl" />
+        </intent>
         <package android:name="pl.waskysoft.player" />
         <package android:name="mark.via.gp" />
         <package android:name="org.videolan.vlc" />
         <package android:name="is.xyz.mpv" />
     </queries>
-    <application android:label="PlayCube URL Router" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
+    <application android:icon="@drawable/router_icon" android:banner="@drawable/router_banner" android:label="PlayCube URL Router" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
         <activity android:name=".InfoActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
