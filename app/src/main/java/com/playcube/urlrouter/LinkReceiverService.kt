@@ -115,6 +115,15 @@ class LinkReceiverService : Service() {
                         data = uri
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
+                    // Persist before attempting background launch. If Google TV blocks
+                    // it, launching InfoActivity from the home screen consumes this URL.
+                    getSharedPreferences("router_settings", MODE_PRIVATE).edit()
+                        .putString("pending_received_url", url).commit()
+                    try {
+                        startActivity(launch)
+                    } catch (_: Exception) {
+                        // Background activity starts can fail on some Android TV builds.
+                    }
                     // Android TV may prohibit background activity starts. A notification
                     // provides a reliable, user-initiated way to open the URL.
                     val pending = PendingIntent.getActivity(this, 1, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -125,7 +134,7 @@ class LinkReceiverService : Service() {
                         .setSmallIcon(android.R.drawable.ic_media_play)
                         .setContentIntent(pending).setAutoCancel(true).build())
                     status = "200 OK"
-                    body = "Link received. Open the PlayCube notification on the TV to launch it."
+                    body = "Link received. Attempted to open it on PlayCube. If nothing appears, open PlayCube URL Router from the TV home screen."
                 } else {
                     status = "404 Not Found"
                     body = "Not found"

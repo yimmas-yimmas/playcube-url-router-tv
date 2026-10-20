@@ -29,6 +29,12 @@ class RouterActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val uri = intent?.data ?: run { finish(); return }
+        // Clear a pending link when the matching URL actually reaches RouterActivity.
+        // This avoids replaying links that launched successfully in the background.
+        val savedUrl = prefs.getString("pending_received_url", null)
+        if (savedUrl == uri.toString()) {
+            prefs.edit().remove("pending_received_url").commit()
+        }
         if (uri.scheme?.lowercase() !in listOf("http", "https")) { finish(); return }
         val path = uri.path?.lowercase().orEmpty()
         if (!(path.endsWith(".m3u8") || path.endsWith("master.txt"))) {

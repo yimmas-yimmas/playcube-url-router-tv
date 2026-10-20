@@ -6,6 +6,7 @@ import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
@@ -32,6 +33,18 @@ class InfoActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A user opening the TV launcher is permitted to start an activity.
+        // Consume the saved link once so it does not replay on every visit.
+        val pendingUrl = prefs.getString("pending_received_url", null)
+        if (!pendingUrl.isNullOrBlank()) {
+            prefs.edit().remove("pending_received_url").commit()
+            startActivity(Intent(this, RouterActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = android.net.Uri.parse(pendingUrl)
+            })
+            finish()
+            return
+        }
 
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -80,7 +93,7 @@ class InfoActivity : Activity() {
         val qrImage = ImageView(this).apply {
             contentDescription = "QR code for PlayCube link sender"
             adjustViewBounds = true
-            val qrSize = (90 * resources.displayMetrics.density).toInt()
+            val qrSize = (120 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(qrSize, qrSize)
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
