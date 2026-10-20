@@ -1,3 +1,6 @@
+
+https://srv13.cdnimages2752.shop/hls/tenzing-2026-webdl-trdual-tt6262770mp4-z0UuQMmd1fy.mp4/txt/master.txt
+
 # PlayCube URL Router (Kotlin / Google TV)
 
 Routes incoming HTTP(S) `ACTION_VIEW` links:
