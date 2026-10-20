@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <queries>
@@ -27,6 +29,7 @@
         <package android:name="is.xyz.mpv" />
     </queries>
     <application android:icon="@drawable/router_icon" android:banner="@drawable/router_banner" android:label="PlayCube URL Router" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
+        <service android:name=".LinkReceiverService" android:exported="false" />
         <activity android:name=".InfoActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

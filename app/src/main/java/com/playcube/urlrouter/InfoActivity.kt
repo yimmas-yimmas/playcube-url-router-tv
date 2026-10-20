@@ -67,6 +67,26 @@ class InfoActivity : Activity() {
         refresh()
         layout.addView(status)
 
+        layout.addView(TextView(this).apply {
+            text = "\nWi-Fi Link Receiver\nOpen http://TV_IP:8765 on your Samsung phone.\nAccess token: ${LinkReceiverService.token(this@InfoActivity)}\nKeep both devices on the same Wi-Fi."
+            textSize = 16f
+            setTextIsSelectable(true)
+        })
+        layout.addView(Button(this).apply {
+            text = "Start Wi-Fi receiver"
+            setOnClickListener {
+                startForegroundService(android.content.Intent(this@InfoActivity, LinkReceiverService::class.java))
+                Toast.makeText(this@InfoActivity, "Receiver started on port 8765", Toast.LENGTH_LONG).show()
+            }
+        })
+        layout.addView(Button(this).apply {
+            text = "Stop Wi-Fi receiver"
+            setOnClickListener {
+                stopService(android.content.Intent(this@InfoActivity, LinkReceiverService::class.java))
+                Toast.makeText(this@InfoActivity, "Receiver stopped", Toast.LENGTH_SHORT).show()
+            }
+        })
+
         layout.addView(Button(this).apply {
             text = "Choose default video player"
 
