@@ -5,6 +5,8 @@
     <queries>
         <package android:name="pl.waskysoft.player" />
         <package android:name="mark.via.gp" />
+        <package android:name="org.videolan.vlc" />
+        <package android:name="is.xyz.mpv" />
     </queries>
     <application android:label="PlayCube URL Router" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
         <activity android:name=".InfoActivity" android:exported="true">
