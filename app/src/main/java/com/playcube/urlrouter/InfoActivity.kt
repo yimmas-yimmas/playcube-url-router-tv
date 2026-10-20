@@ -13,6 +13,12 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.ImageView
+import android.graphics.Bitmap
+import android.graphics.Color
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import java.net.NetworkInterface
 
 class InfoActivity : Activity() {
     private val prefs by lazy {
@@ -68,9 +74,63 @@ class InfoActivity : Activity() {
         layout.addView(status)
 
         layout.addView(TextView(this).apply {
-            text = "\nWi-Fi Link Receiver\nOpen http://TV_IP:8765 on your Samsung phone.\nAccess token: ${LinkReceiverService.token(this@InfoActivity)}\nKeep both devices on the same Wi-Fi."
-            textSize = 16f
+            text = "\nWi-Fi Link Receiver\nScan QR code with your Samsung camera."
+            textSize = 18f
+        })
+        val qrImage = ImageView(this).apply {
+            contentDescription = "QR code for PlayCube link sender"
+            adjustViewBounds = true
+            minimumHeight = 300
+        }
+        val receiverAddress = TextView(this).apply {
+            textSize = 15f
             setTextIsSelectable(true)
+        }
+        fun localIp(): String? = try {
+            NetworkInterface.getNetworkInterfaces().toList().asSequence()
+                .filter { it.isUp && !it.isLoopback }
+                .flatMap { it.inetAddresses.toList().asSequence() }
+                .filterIsInstance<java.net.Inet4Address>()
+                .firstOrNull { it.isSiteLocalAddress }?.hostAddress
+        } catch (_: Exception) { null }
+        fun updateQr() {
+            val ip = localIp()
+            if (ip == null) {
+                receiverAddress.text = "No local IPv4 address found. Connect PlayCube to Wi-Fi."
+                qrImage.setImageDrawable(null)
+                return
+            }
+            val address = "http://$ip:${LinkReceiverService.PORT}/?token=${LinkReceiverService.token(this)}"
+            receiverAddress.text = "Scan to open:\nhttp://$ip:${LinkReceiverService.PORT}/\nToken included in QR code"
+            try {
+                val matrix = QRCodeWriter().encode(address, BarcodeFormat.QR_CODE, 420, 420)
+                val bitmap = Bitmap.createBitmap(420, 420, Bitmap.Config.ARGB_8888)
+                for (y in 0 until 420) for (x in 0 until 420)
+                    bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+                qrImage.setImageBitmap(bitmap)
+            } catch (e: Exception) {
+                receiverAddress.text = "QR generation failed: ${e.message}"
+            }
+        }
+        layout.addView(qrImage)
+        layout.addView(receiverAddress)
+        updateQr()
+        layout.addView(Button(this).apply {
+            text = "Refresh QR / IP address"
+            setOnClickListener { updateQr() }
+        })
+        layout.addView(Button(this).apply {
+            text = "Regenerate access token"
+            setOnClickListener {
+                AlertDialog.Builder(this@InfoActivity)
+                    .setTitle("Regenerate access token?")
+                    .setMessage("Previously scanned QR codes will stop working.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Regenerate") { _, _ ->
+                        prefs.edit().remove("receiver_token").apply()
+                        updateQr()
+                    }.show()
+            }
         })
         layout.addView(Button(this).apply {
             text = "Start Wi-Fi receiver"

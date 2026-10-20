@@ -79,9 +79,16 @@ class LinkReceiverService : Service() {
                 val supplied = headers["x-playcube-token"]
                 val body: String
                 val status: String
-                if (method == "GET" && path == "/") {
+                if (method == "GET" && (path == "/" || path.startsWith("/?"))) {
+                    val queryToken = try {
+                        path.substringAfter('?', "").split('&').mapNotNull {
+                            val parts = it.split('=', limit = 2)
+                            if (parts.size == 2 && parts[0] == "token") java.net.URLDecoder.decode(parts[1], "UTF-8") else null
+                        }.firstOrNull()
+                    } catch (_: Exception) { null }
+                    val prefill = if (queryToken == expected) expected else ""
                     status = "200 OK"
-                    body = """<!doctype html><html><meta name="viewport" content="width=device-width, initial-scale=1"><title>PlayCube Router</title><body style="font:18px sans-serif;max-width:560px;margin:40px auto;padding:15px"><h2>Send link to PlayCube</h2><form method="POST" action="/send"><input name="token" placeholder="TV access token" style="width:100%;padding:12px"><p><input name="url" type="url" placeholder="https://..." required style="width:100%;padding:12px"></p><button style="padding:12px">Send to TV</button></form></body></html>"""
+                    body = """<!doctype html><html><meta name="viewport" content="width=device-width, initial-scale=1"><title>PlayCube Router</title><body style="font:18px sans-serif;max-width:560px;margin:40px auto;padding:15px"><h2>Send link to PlayCube</h2><form method="POST" action="/send"><input name="token" value="$prefill" placeholder="TV access token" style="width:100%;padding:12px"><p><input name="url" type="url" placeholder="https://..." required style="width:100%;padding:12px"></p><button style="padding:12px">Send to TV</button></form></body></html>"""
                 } else if (method == "POST" && path == "/send") {
                     val length = headers["content-length"]?.toIntOrNull() ?: 0
                     if (length !in 1..4096) { respond(client, "413 Payload Too Large", "Invalid request"); return }
@@ -123,7 +130,7 @@ class LinkReceiverService : Service() {
                     status = "404 Not Found"
                     body = "Not found"
                 }
-                respond(client, status, body, method == "GET" && path == "/")
+                respond(client, status, body, method == "GET" && (path == "/" || path.startsWith("/?")))
             } catch (_: Exception) { }
         }
     }
