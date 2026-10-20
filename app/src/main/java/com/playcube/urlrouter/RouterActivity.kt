@@ -1,68 +1,94 @@
 package com.playcube.urlrouter
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.CheckBox
+import android.widget.Toast
 
 class RouterActivity : Activity() {
+    private val prefs by lazy { getSharedPreferences("router_settings", MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val uri: Uri = intent?.data ?: run {
+        val uri = intent?.data ?: run { finish(); return }
+        if (uri.scheme?.lowercase() !in listOf("http", "https")) { finish(); return }
+        val path = uri.path?.lowercase().orEmpty()
+        val isHls = path.endsWith(".m3u8") || path.endsWith("master.txt")
+        if (!isHls) {
+            launchBrowser(uri)
             finish()
             return
         }
-
-        val scheme = uri.scheme?.lowercase()
-
-        if (scheme != "http" && scheme != "https") {
+        val saved = prefs.getString("default_player", null)
+        if (saved != null && launchPlayer(saved, uri)) {
             finish()
-            return
+        } else {
+            showPlayerDialog(uri)
         }
+    }
 
-        val path = uri.path?.lowercase() ?: ""
-
-        val isHls =
-            path.endsWith(".m3u8") ||
-            path.endsWith("/master.txt") ||
-            path.endsWith("master.txt")
-
-        if (isHls) {
-
-            // Send HLS URL directly to Just+ Player.
-            // This reproduces:
-            // adb shell am start -a android.intent.action.VIEW \
-            // -d "URL" -p pl.waskysoft.player
-
-            val playerIntent = Intent(Intent.ACTION_VIEW).apply {
-                data = uri
-                setPackage("pl.waskysoft.player")
+    private fun showPlayerDialog(uri: Uri) {
+        val ids = arrayOf("vlc", "mpv", "just")
+        val names = arrayOf("VLC", "mpv-android", "Just+ Player (may not play master.txt)")
+        val remember = CheckBox(this).apply {
+            text = "Always use selected player"
+            setPadding(24, 12, 24, 12)
+            isFocusable = true
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Open video with")
+            .setSingleChoiceItems(names, -1) { dialog, which ->
+                val id = ids[which]
+                if (launchPlayer(id, uri)) {
+                    if (remember.isChecked) prefs.edit().putString("default_player", id).apply()
+                    dialog.dismiss()
+                    finish()
+                }
             }
+            .setView(remember)
+            .setNegativeButton("Cancel") { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
+    }
 
-            try {
-                startActivity(playerIntent)
-            } catch (e: Exception) {
-                // Just+ Player not installed or unable to handle URL
-            }
-
-            finish()
-            return
-        }
-
-        // Normal website -> Via Browser
-        val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+    private fun launchPlayer(id: String, uri: Uri): Boolean {
+        val playerIntent = Intent(Intent.ACTION_VIEW).apply {
             data = uri
-            setPackage("mark.via.gp")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            when (id) {
+                "vlc" -> {
+                    setClassName("org.videolan.vlc", "org.videolan.vlc.StartActivity")
+                    setDataAndType(uri, "application/vnd.apple.mpegurl")
+                }
+                "mpv" -> {
+                    setPackage("is.xyz.mpv")
+                    setDataAndType(uri, "application/vnd.apple.mpegurl")
+                }
+                "just" -> {
+                    setClassName("pl.waskysoft.player", "com.brouken.player.PlayerActivity")
+                    setDataAndType(uri, "application/vnd.apple.mpegurl")
+                }
+                else -> return false
+            }
         }
-
-        try {
-            startActivity(browserIntent)
+        return try {
+            startActivity(playerIntent)
+            true
         } catch (e: Exception) {
-            // Via Browser not installed
+            Toast.makeText(this, "Cannot open $id: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            false
         }
+    }
 
-        finish()
+    private fun launchBrowser(uri: Uri) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("mark.via.gp"))
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this, "Via Browser not installed", Toast.LENGTH_LONG).show()
+        }
     }
 }
