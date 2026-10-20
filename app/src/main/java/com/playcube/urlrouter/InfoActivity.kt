@@ -80,7 +80,9 @@ class InfoActivity : Activity() {
         val qrImage = ImageView(this).apply {
             contentDescription = "QR code for PlayCube link sender"
             adjustViewBounds = true
-            minimumHeight = 300
+            val qrSize = (90 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(qrSize, qrSize)
+            scaleType = ImageView.ScaleType.FIT_CENTER
         }
         val receiverAddress = TextView(this).apply {
             textSize = 15f
