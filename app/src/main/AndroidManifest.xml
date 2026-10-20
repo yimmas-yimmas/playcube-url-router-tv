@@ -11,6 +11,16 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/vnd.apple.mpegurl" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" />
+        </intent>
         <package android:name="pl.waskysoft.player" />
         <package android:name="mark.via.gp" />
         <package android:name="org.videolan.vlc" />

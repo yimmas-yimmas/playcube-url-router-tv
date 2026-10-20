@@ -36,6 +36,16 @@ class InfoActivity : Activity() {
             textSize = 18f
         }
 
+        fun browserDescription(): String {
+            val choice = prefs.getString("browser_choice", "default") ?: "default"
+            return when (choice) {
+                "default" -> "System default"
+                "ask" -> "Ask every time"
+                else -> BrowserApps.installed(this).firstOrNull { it.packageName == choice }?.label
+                    ?: "Unavailable (will ask)"
+            }
+        }
+
         fun refresh() {
             val selected = when (
                 prefs.getString("default_player", null)
@@ -49,8 +59,9 @@ class InfoActivity : Activity() {
             status.text =
                 "PlayCube URL Router\n\n" +
                 "Video links: VLC, mpv, Just+\n" +
-                "Other links: Via Browser\n" +
-                "Default player: $selected"
+                "Websites: configurable browser\n" +
+                "Default player: $selected\n" +
+                "Website browser: ${browserDescription()}"
         }
 
         refresh()
@@ -81,6 +92,22 @@ class InfoActivity : Activity() {
                                 putString("default_player", ids[index])
                         }.apply()
 
+                        refresh()
+                    }
+                    .show()
+            }
+        })
+
+        layout.addView(Button(this).apply {
+            text = "Choose website browser"
+            setOnClickListener {
+                val browsers = BrowserApps.installed(this@InfoActivity)
+                val labels = (listOf("System default", "Ask every time") + browsers.map { it.label }).toTypedArray()
+                val ids = listOf("default", "ask") + browsers.map { it.packageName }
+                AlertDialog.Builder(this@InfoActivity)
+                    .setTitle("Website browser")
+                    .setItems(labels) { _, index ->
+                        prefs.edit().putString("browser_choice", ids[index]).apply()
                         refresh()
                     }
                     .show()
