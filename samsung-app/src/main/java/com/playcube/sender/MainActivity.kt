@@ -92,7 +92,7 @@ class MainActivity : Activity() {
         minHeight = dp(54)
     }
     private fun drawScreen() {
-        val scroller = ScrollView(this).apply { fillViewport = true; setBackgroundColor(bg) }
+        val scroller = ScrollView(this).apply { isFillViewport = true; setBackgroundColor(bg) }
         content = column().apply { pad(this, 22, 24) }
         scroller.addView(content); setContentView(scroller)
         val header = row()
