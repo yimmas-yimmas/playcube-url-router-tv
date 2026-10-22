@@ -1,23 +1,32 @@
-# PlayCube URL Router + Send to PlayCube
+# PlayCube URL Router — TV + Samsung
 
-Two Android apps in **one GitHub repository**.
+Single GitHub repository containing two Android application modules.
 
-- `app/`: TCL PlayCube TV receiver/router, with 120 dp QR code and saved-link launch fallback.
-- `samsung-app/`: Samsung phone companion with Google Code Scanner QR pairing and Android text/plain Share target.
+- `app`: TCL PlayCube / Google TV URL receiver and router (unchanged from prior working combined project).
+- `samsung-app`: Samsung phone companion, modern dark UI and one-scan QR pairing.
+
+## Samsung features
+
+- Branded dark home screen, pairing status, quick actions, clipboard sending and last 10 successfully sent links.
+- Scan existing PlayCube TV QR once; stores the LAN IP and receiver token locally.
+- **Share → Send to PlayCube**: accepts Android `ACTION_SEND` `text/plain`, extracts the first HTTP(S) URL, sends it immediately if paired, and returns to the originating app after a successful HTTP 200 response. No confirmation screen required.
+- If unpaired, the scanner opens first and sends the pending shared link after pairing.
+- On failure, leaves the app open with a retry option.
+- Pairing settings let you rescan or forget the device.
 
 ## Build
 
-Go to GitHub **Actions → Build TV and Samsung APKs → Run workflow**. Two APK artifacts are produced. Install the TV APK on PlayCube and Samsung APK on your phone. The GitHub Actions build requires internet access for Gradle dependencies.
+GitHub Actions → **Build TV and Samsung APKs** → Run workflow.
+Install `samsung-app-debug.apk` on the phone; the TV APK is not changed by this update.
 
-## Pair and send
+## Usage
 
-1. On TV, open PlayCube URL Router and start Wi-Fi receiver.
-2. On phone, open Send to PlayCube, scan TV QR once (requires Google Play services for the code scanner).
-3. From Chrome or another Android app, choose **Share → Send to PlayCube**.
-4. Phone and TV must be on same trusted local network. TV's IP or token change requires rescanning.
+1. Open PlayCube Router on TV and start Wi-Fi receiver.
+2. Open Send to PlayCube on Samsung, scan TV's QR code.
+3. In Chrome or another Android app, tap Share → Send to PlayCube. The URL is sent automatically.
 
-**TV limitation:** Android TV can prevent background app launches. If the link does not open immediately, bring the TV Router to the foreground to open its saved URL.
+Both devices must be on the same trusted local network. The pairing token is transmitted over local HTTP, not HTTPS; do not use on untrusted networks. The TV app may still need to be foregrounded to launch playback, depending on Android TV background-launch restrictions.
 
-**Security:** pairing token travels via local HTTP. Use only a trusted private LAN. QR is a reusable credential, not certificate-based KDE pairing.
+## Build status
 
-**Build status:** source integrated; no local Android SDK/Gradle compilation was performed. Check GitHub Actions build output.
+Source assembled and ZIP checked, but Android Gradle compilation and device testing have not been performed here.
