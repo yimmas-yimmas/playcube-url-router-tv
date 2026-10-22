@@ -33,15 +33,16 @@ class LinkReceiverService : Service() {
     override fun onCreate() {
         super.onCreate()
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "PlayCube link receiver", NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, "tvBOX Receiver", NotificationManager.IMPORTANCE_DEFAULT))
         val open = PendingIntent.getActivity(this, 0, Intent(this, InfoActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, CHANNEL)
-            .setContentTitle("PlayCube link receiver")
+            .setContentTitle("tvBOX Receiver")
             .setContentText("Ready for links on local Wi-Fi")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(open).setOngoing(true).build()
         startForeground(1001, notification)
         running.set(true)
+        getSharedPreferences("router_settings", MODE_PRIVATE).edit().putBoolean("receiver_running", true).apply()
         worker = Thread { serve() }.also { it.start() }
     }
 
@@ -88,7 +89,7 @@ class LinkReceiverService : Service() {
                     } catch (_: Exception) { null }
                     val prefill = if (queryToken == expected) expected else ""
                     status = "200 OK"
-                    body = """<!doctype html><html><meta name="viewport" content="width=device-width, initial-scale=1"><title>PlayCube Router</title><body style="font:18px sans-serif;max-width:560px;margin:40px auto;padding:15px"><h2>Send link to PlayCube</h2><form method="POST" action="/send"><input name="token" value="$prefill" placeholder="TV access token" style="width:100%;padding:12px"><p><input name="url" type="url" placeholder="https://..." required style="width:100%;padding:12px"></p><button style="padding:12px">Send to TV</button></form></body></html>"""
+                    body = """<!doctype html><html><meta name="viewport" content="width=device-width, initial-scale=1"><title>tvBOX Receiver</title><body style="font:18px sans-serif;max-width:560px;margin:40px auto;padding:15px"><h2>Send link to tvBOX</h2><form method="POST" action="/send"><input name="token" value="$prefill" placeholder="TV access token" style="width:100%;padding:12px"><p><input name="url" type="url" placeholder="https://..." required style="width:100%;padding:12px"></p><button style="padding:12px">Send to tvBOX</button></form></body></html>"""
                 } else if (method == "POST" && path == "/send") {
                     val length = headers["content-length"]?.toIntOrNull() ?: 0
                     if (length !in 1..4096) { respond(client, "413 Payload Too Large", "Invalid request"); return }
@@ -118,7 +119,7 @@ class LinkReceiverService : Service() {
                     // Persist before attempting background launch. If Google TV blocks
                     // it, launching InfoActivity from the home screen consumes this URL.
                     getSharedPreferences("router_settings", MODE_PRIVATE).edit()
-                        .putString("pending_received_url", url).commit()
+                        .putString("pending_received_url", url).putString("last_received_url", url).commit()
                     try {
                         startActivity(launch)
                     } catch (_: Exception) {
@@ -129,12 +130,12 @@ class LinkReceiverService : Service() {
                     val pending = PendingIntent.getActivity(this, 1, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                     val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
                     nm.notify(1002, Notification.Builder(this, CHANNEL)
-                        .setContentTitle("Link received — open on TV")
+                        .setContentTitle("Link received — open on tvBOX")
                         .setContentText(uri.host)
                         .setSmallIcon(android.R.drawable.ic_media_play)
                         .setContentIntent(pending).setAutoCancel(true).build())
                     status = "200 OK"
-                    body = "Link received. Attempted to open it on PlayCube. If nothing appears, open PlayCube URL Router from the TV home screen."
+                    body = "Link received. Attempted to open it on tvBOX. If nothing appears, open tvBOX Receiver from the TV home screen."
                 } else {
                     status = "404 Not Found"
                     body = "Not found"
@@ -153,6 +154,7 @@ class LinkReceiverService : Service() {
 
     override fun onDestroy() {
         running.set(false)
+        getSharedPreferences("router_settings", MODE_PRIVATE).edit().putBoolean("receiver_running", false).apply()
         try { server?.close() } catch (_: Exception) { }
         super.onDestroy()
     }

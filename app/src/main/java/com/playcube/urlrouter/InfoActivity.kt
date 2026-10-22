@@ -1,4 +1,3 @@
-
 package com.playcube.urlrouter
 
 import android.app.Activity
@@ -7,24 +6,29 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
-import android.widget.ImageView
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.EditText
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.Toast
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.net.NetworkInterface
 
 class InfoActivity : Activity() {
-    private val prefs by lazy {
-        getSharedPreferences("router_settings", MODE_PRIVATE)
-    }
+    private val prefs by lazy { getSharedPreferences("router_settings", MODE_PRIVATE) }
 
     companion object {
         private const val DEFAULT_UA =
@@ -33,287 +37,432 @@ class InfoActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // A user opening the TV launcher is permitted to start an activity.
-        // Consume the saved link once so it does not replay on every visit.
+
         val pendingUrl = prefs.getString("pending_received_url", null)
         if (!pendingUrl.isNullOrBlank()) {
             prefs.edit().remove("pending_received_url").commit()
             startActivity(Intent(this, RouterActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
-                data = android.net.Uri.parse(pendingUrl)
+                data = Uri.parse(pendingUrl)
             })
             finish()
             return
         }
 
-        val layout = LinearLayout(this).apply {
+        setContentView(buildScreen())
+    }
+
+    private fun buildScreen(): View {
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.rgb(7, 16, 30))
+            isFillViewport = true
+        }
+
+        val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(36, 28, 36, 28)
+            setPadding(dp(24), dp(18), dp(24), dp(18))
         }
+        scroll.addView(outer)
 
-        val status = TextView(this).apply {
-            textSize = 18f
-        }
-
-        fun browserDescription(): String {
-            val choice = prefs.getString("browser_choice", "default") ?: "default"
-            return when (choice) {
-                "default" -> "System default"
-                "ask" -> "Ask every time"
-                else -> BrowserApps.installed(this).firstOrNull { it.packageName == choice }?.label
-                    ?: "Unavailable (will ask)"
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.rgb(8, 20, 39), Color.rgb(9, 24, 49), Color.rgb(7, 18, 34))
+            ).apply {
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), Color.argb(120, 79, 110, 160))
             }
+            setPadding(dp(24), dp(20), dp(24), dp(20))
+        }
+        outer.addView(shell, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        shell.addView(buildHeader())
+        shell.addView(space(18))
+
+        val contentRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+        }
+        shell.addView(contentRow)
+
+        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val right = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), 0, 0, 0)
         }
 
-        fun refresh() {
-            val selected = when (
-                prefs.getString("default_player", null)
-            ) {
-                "vlc" -> "VLC"
-                "mpv" -> "mpv-android"
-                "just" -> "Just+ Player"
-                else -> "Ask every time"
-            }
+        contentRow.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        contentRow.addView(right, LinearLayout.LayoutParams(dp(330), ViewGroup.LayoutParams.WRAP_CONTENT))
 
-            status.text =
-                "PlayCube URL Router\n\n" +
-                "Video links: VLC, mpv, Just+\n" +
-                "Websites: configurable browser\n" +
-                "Default player: $selected\n" +
-                "Website browser: ${browserDescription()}"
+        left.addView(buildReceiverCard())
+        left.addView(space(10))
+        left.addView(buildActionCard("◎", "Open in", "Choose default app for links", defaultPlayerLabel()) { chooseDefaultPlayer() })
+        left.addView(space(10))
+        left.addView(buildActionCard("◈", "Access Token", "Used to authenticate incoming links", LinkReceiverService.token(this)) { tokenActions() })
+        left.addView(space(10))
+        left.addView(buildActionCard("↻", "Refresh QR / IP address", "Update local IP and regenerate QR code", "") { recreate() })
+        left.addView(space(10))
+        left.addView(buildActionCard("◷", "Open Last Received Link", "Launch the most recent URL", "") { openLastReceived() })
+        left.addView(space(10))
+        left.addView(buildActionCard("⚙", "Advanced Settings", "Notifications, browser and User-Agent", "") { advancedSettings() })
+
+        val ip = localIp() ?: "Not connected"
+        val token = LinkReceiverService.token(this)
+        right.addView(buildQrPanel(ip, token))
+        right.addView(space(14))
+        right.addView(buildInfoPanel(ip, token))
+        right.addView(space(12))
+        right.addView(bodyText("Make sure your phone and tvBOX are on the same Wi-Fi network.", 13f))
+
+        return scroll
+    }
+
+    private fun buildHeader(): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-
-        refresh()
-        layout.addView(status)
-
-        layout.addView(TextView(this).apply {
-            text = "\nWi-Fi Link Receiver\nScan QR code with your Samsung camera."
-            textSize = 18f
-        })
-        val qrImage = ImageView(this).apply {
-            contentDescription = "QR code for PlayCube link sender"
-            adjustViewBounds = true
-            val qrSize = (120 * resources.displayMetrics.density).toInt()
-            layoutParams = LinearLayout.LayoutParams(qrSize, qrSize)
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.router_icon)
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
-        val receiverAddress = TextView(this).apply {
-            textSize = 15f
-            setTextIsSelectable(true)
+        row.addView(icon, LinearLayout.LayoutParams(dp(68), dp(68)))
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), 0, 0, 0)
         }
-        fun localIp(): String? = try {
-            NetworkInterface.getNetworkInterfaces().toList().asSequence()
-                .filter { it.isUp && !it.isLoopback }
-                .flatMap { it.inetAddresses.toList().asSequence() }
-                .filterIsInstance<java.net.Inet4Address>()
-                .firstOrNull { it.isSiteLocalAddress }?.hostAddress
-        } catch (_: Exception) { null }
-        fun updateQr() {
-            val ip = localIp()
-            if (ip == null) {
-                receiverAddress.text = "No local IPv4 address found. Connect PlayCube to Wi-Fi."
-                qrImage.setImageDrawable(null)
-                return
-            }
-            val address = "http://$ip:${LinkReceiverService.PORT}/?token=${LinkReceiverService.token(this)}"
-            receiverAddress.text = "Scan to open:\nhttp://$ip:${LinkReceiverService.PORT}/\nToken included in QR code"
-            try {
-                val matrix = QRCodeWriter().encode(address, BarcodeFormat.QR_CODE, 420, 420)
-                val bitmap = Bitmap.createBitmap(420, 420, Bitmap.Config.ARGB_8888)
-                for (y in 0 until 420) for (x in 0 until 420)
-                    bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
-                qrImage.setImageBitmap(bitmap)
-            } catch (e: Exception) {
-                receiverAddress.text = "QR generation failed: ${e.message}"
-            }
+        textCol.addView(titleText("tvBOX Receiver", 30f, true))
+        textCol.addView(bodyText("Wi-Fi URL receiver for VLC, mpv and browser", 16f))
+        row.addView(textCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val version = try {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0"
+        } catch (_: Exception) { "1.0.0" }
+        row.addView(bodyText("Version $version", 14f, Color.rgb(196, 209, 235)))
+        return row
+    }
+
+    private fun buildReceiverCard(): View {
+        val card = baseCard()
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        layout.addView(qrImage)
-        layout.addView(receiverAddress)
-        updateQr()
-        layout.addView(Button(this).apply {
-            text = "Refresh QR / IP address"
-            setOnClickListener { updateQr() }
-        })
-        layout.addView(Button(this).apply {
-            text = "Regenerate access token"
-            setOnClickListener {
-                AlertDialog.Builder(this@InfoActivity)
-                    .setTitle("Regenerate access token?")
-                    .setMessage("Previously scanned QR codes will stop working.")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Regenerate") { _, _ ->
-                        prefs.edit().remove("receiver_token").apply()
-                        updateQr()
-                    }.show()
+        val leftIcon = iconText("◔")
+        row.addView(leftIcon)
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), 0, dp(12), 0)
+        }
+        textCol.addView(titleText("Wi-Fi Receiver", 17f, true))
+        textCol.addView(bodyText("Receive URLs from Samsung phone", 13f))
+        row.addView(textCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val toggle = Switch(this).apply {
+            isChecked = prefs.getBoolean("receiver_running", false)
+            setOnCheckedChangeListener { _, checked -> toggleReceiver(checked) }
+        }
+        row.addView(toggle)
+        card.addView(row)
+        card.isClickable = true
+        card.isFocusable = true
+        card.setOnClickListener { toggle.isChecked = !toggle.isChecked }
+        return card
+    }
+
+    private fun buildActionCard(symbol: String, title: String, subtitle: String, trailing: String, onClick: () -> Unit): View {
+        val card = baseCard()
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        row.addView(iconText(symbol))
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), 0, dp(12), 0)
+        }
+        textCol.addView(titleText(title, 17f, true))
+        textCol.addView(bodyText(subtitle, 13f))
+        row.addView(textCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val trailCol = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        if (trailing.isNotEmpty()) {
+            trailCol.addView(bodyText(trailing, 16f, Color.rgb(218, 228, 245), false, Gravity.END))
+            trailCol.addView(spaceW(10))
+        }
+        trailCol.addView(bodyText("›", 24f, Color.rgb(141, 167, 210)))
+        row.addView(trailCol)
+
+        card.addView(row)
+        card.isClickable = true
+        card.isFocusable = true
+        card.setOnClickListener { onClick() }
+        return card
+    }
+
+    private fun buildQrPanel(ip: String, token: String): View {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        panel.addView(titleText("Scan QR with your phone", 18f, true, gravity = Gravity.CENTER_HORIZONTAL))
+        panel.addView(space(10))
+
+        val qrHolder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(14).toFloat()
             }
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        val qr = ImageView(this).apply {
+            val size = dp(120)
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            setImageBitmap(buildQrBitmap("http://$ip:${LinkReceiverService.PORT}/?token=$token", 420))
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        qrHolder.addView(qr)
+        panel.addView(qrHolder)
+        panel.addView(space(10))
+        panel.addView(bodyText("Opens URL sender with IP and token automatically filled in.", 13f, gravity = Gravity.CENTER_HORIZONTAL))
+        return panel
+    }
+
+    private fun buildInfoPanel(ip: String, token: String): View {
+        val panel = baseCard()
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(infoRow("IP Address", ip) { copy(ip, "IP address") })
+        col.addView(separator())
+        col.addView(infoRow("Access Token", token) { copy(token, "Access token") })
+        panel.addView(col)
+        return panel
+    }
+
+    private fun infoRow(label: String, value: String, onCopy: () -> Unit): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+        }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(bodyText(label, 13f, Color.rgb(183, 198, 224)))
+        col.addView(titleText(value, 18f, true))
+        row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val copyBtn = Button(this).apply {
+            text = "Copy"
+            isAllCaps = false
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            background = buttonBg(false)
+            setOnClickListener { onCopy() }
+        }
+        row.addView(copyBtn, LinearLayout.LayoutParams(dp(74), dp(38)))
+        return row
+    }
+
+    private fun baseCard(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(Color.argb(225, 24, 38, 61), Color.argb(225, 20, 35, 56), Color.argb(225, 18, 31, 50))
+        ).apply {
+            cornerRadius = dp(16).toFloat()
+            setStroke(dp(1), Color.argb(90, 115, 145, 190))
+        }
+        setPadding(dp(18), dp(16), dp(18), dp(16))
+    }
+
+    private fun toggleReceiver(checked: Boolean) {
+        if (checked) {
+            startForegroundService(Intent(this, LinkReceiverService::class.java))
+            Toast.makeText(this, "Receiver started on port ${LinkReceiverService.PORT}", Toast.LENGTH_SHORT).show()
+        } else {
+            stopService(Intent(this, LinkReceiverService::class.java))
+            prefs.edit().putBoolean("receiver_running", false).apply()
+            Toast.makeText(this, "Receiver stopped", Toast.LENGTH_SHORT).show()
+        }
+        recreate()
+    }
+
+    private fun openLastReceived() {
+        val url = prefs.getString("last_received_url", null)
+        if (url.isNullOrBlank()) {
+            Toast.makeText(this, "No received link yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        startActivity(Intent(this, RouterActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            data = Uri.parse(url)
         })
-        layout.addView(Button(this).apply {
-            text = "Start Wi-Fi receiver"
-            setOnClickListener {
-                startForegroundService(android.content.Intent(this@InfoActivity, LinkReceiverService::class.java))
-                Toast.makeText(this@InfoActivity, "Receiver started on port 8765", Toast.LENGTH_LONG).show()
+    }
+
+    private fun defaultPlayerLabel(): String = when (prefs.getString("default_player", null)) {
+        "vlc" -> "VLC"
+        "mpv" -> "mpv"
+        "just" -> "Just+"
+        else -> "Ask every time"
+    }
+
+    private fun chooseDefaultPlayer() {
+        val labels = arrayOf("Ask every time", "VLC", "mpv-android", "Just+ Player")
+        val ids = arrayOf<String?>(null, "vlc", "mpv", "just")
+        AlertDialog.Builder(this)
+            .setTitle("Default video player")
+            .setItems(labels) { _, index ->
+                prefs.edit().apply {
+                    if (ids[index] == null) remove("default_player") else putString("default_player", ids[index])
+                }.apply()
+                recreate()
             }
-        })
-        layout.addView(Button(this).apply {
-            text = "Stop Wi-Fi receiver"
-            setOnClickListener {
-                stopService(android.content.Intent(this@InfoActivity, LinkReceiverService::class.java))
-                Toast.makeText(this@InfoActivity, "Receiver stopped", Toast.LENGTH_SHORT).show()
+            .show()
+    }
+
+    private fun tokenActions() {
+        val token = LinkReceiverService.token(this)
+        AlertDialog.Builder(this)
+            .setTitle("Access token")
+            .setMessage(token)
+            .setNeutralButton("Copy") { _, _ -> copy(token, "Access token") }
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Regenerate") { _, _ ->
+                prefs.edit().remove("receiver_token").apply()
+                Toast.makeText(this, "Access token regenerated", Toast.LENGTH_SHORT).show()
+                recreate()
             }
-        })
+            .show()
+    }
 
-        layout.addView(Button(this).apply {
-            text = "Choose default video player"
-
-            setOnClickListener {
-                val labels = arrayOf(
-                    "Ask every time",
-                    "VLC",
-                    "mpv-android",
-                    "Just+ Player"
-                )
-
-                val ids = arrayOf(
-                    null, "vlc", "mpv", "just"
-                )
-
-                AlertDialog.Builder(this@InfoActivity)
-                    .setTitle("Default video player")
-                    .setItems(labels) { _, index ->
-                        prefs.edit().apply {
-                            if (ids[index] == null)
-                                remove("default_player")
-                            else
-                                putString("default_player", ids[index])
-                        }.apply()
-
-                        refresh()
-                    }
-                    .show()
+    private fun advancedSettings() {
+        val items = arrayOf(
+            "Choose website browser",
+            "Edit HTTP User-Agent",
+            "Copy User-Agent for VLC",
+            "Copy mpv.conf setting",
+            "Start Wi-Fi receiver",
+            "Stop Wi-Fi receiver"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Advanced settings")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> chooseBrowser()
+                    1 -> editUserAgent()
+                    2 -> copy(currentUa(), "User-Agent")
+                    3 -> copy("user-agent=${currentUa()}", "mpv.conf setting")
+                    4 -> toggleReceiver(true)
+                    5 -> toggleReceiver(false)
+                }
             }
-        })
+            .show()
+    }
 
-        layout.addView(Button(this).apply {
-            text = "Choose website browser"
-            setOnClickListener {
-                val browsers = BrowserApps.installed(this@InfoActivity)
-                val labels = (listOf("System default", "Ask every time") + browsers.map { it.label }).toTypedArray()
-                val ids = listOf("default", "ask") + browsers.map { it.packageName }
-                AlertDialog.Builder(this@InfoActivity)
-                    .setTitle("Website browser")
-                    .setItems(labels) { _, index ->
-                        prefs.edit().putString("browser_choice", ids[index]).apply()
-                        refresh()
-                    }
-                    .show()
+    private fun chooseBrowser() {
+        val browsers = BrowserApps.installed(this)
+        val labels = (listOf("System default", "Ask every time") + browsers.map { it.label }).toTypedArray()
+        val ids = listOf("default", "ask") + browsers.map { it.packageName }
+        AlertDialog.Builder(this)
+            .setTitle("Website browser")
+            .setItems(labels) { _, index ->
+                prefs.edit().putString("browser_choice", ids[index]).apply()
+                recreate()
             }
-        })
+            .show()
+    }
 
-        layout.addView(TextView(this).apply {
-            text = "\nHTTP User-Agent"
-            textSize = 18f
-        })
-
-        val uaInput = EditText(this).apply {
+    private fun editUserAgent() {
+        val input = EditText(this).apply {
+            setText(currentUa())
             setSingleLine(false)
-            minLines = 2
-            setText(
-                prefs.getString("user_agent", DEFAULT_UA)
-            )
+            minLines = 3
             setSelectAllOnFocus(true)
         }
-
-        layout.addView(uaInput)
-
-        fun currentUa(): String =
-            uaInput.text.toString().trim()
-
-        fun copy(value: String, label: String) {
-            val clipboard = getSystemService(
-                Context.CLIPBOARD_SERVICE
-            ) as ClipboardManager
-
-            clipboard.setPrimaryClip(
-                ClipData.newPlainText(label, value)
-            )
-
-            Toast.makeText(
-                this,
-                "$label copied",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-
-        layout.addView(Button(this).apply {
-            text = "Save User-Agent"
-
-            setOnClickListener {
-                val ua = currentUa()
-
-                if (
-                    ua.isEmpty() ||
-                    ua.contains('\n') ||
-                    ua.contains('\r')
-                ) {
-                    Toast.makeText(
-                        this@InfoActivity,
-                        "Enter a single-line User-Agent",
-                        Toast.LENGTH_LONG
-                    ).show()
+        AlertDialog.Builder(this)
+            .setTitle("HTTP User-Agent")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val ua = input.text.toString().trim()
+                if (ua.isEmpty() || ua.contains('\n') || ua.contains('\r')) {
+                    Toast.makeText(this, "Enter a single-line User-Agent", Toast.LENGTH_LONG).show()
                 } else {
-                    prefs.edit()
-                        .putString("user_agent", ua)
-                        .apply()
-
-                    Toast.makeText(
-                        this@InfoActivity,
-                        "User-Agent saved",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    prefs.edit().putString("user_agent", ua).apply()
+                    Toast.makeText(this, "User-Agent saved", Toast.LENGTH_SHORT).show()
                 }
             }
-        })
+            .show()
+    }
 
-        layout.addView(Button(this).apply {
-            text = "Copy User-Agent for VLC"
+    private fun currentUa(): String = prefs.getString("user_agent", DEFAULT_UA) ?: DEFAULT_UA
 
-            setOnClickListener {
-                if (currentUa().isNotEmpty()) {
-                    copy(currentUa(), "User-Agent")
-                }
-            }
-        })
+    private fun localIp(): String? = try {
+        NetworkInterface.getNetworkInterfaces().toList().asSequence()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.toList().asSequence() }
+            .filterIsInstance<java.net.Inet4Address>()
+            .firstOrNull { it.isSiteLocalAddress }?.hostAddress
+    } catch (_: Exception) { null }
 
-        layout.addView(Button(this).apply {
-            text = "Copy mpv.conf setting"
+    private fun buildQrBitmap(content: String, size: Int): Bitmap {
+        val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, size, size)
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        for (y in 0 until size) for (x in 0 until size) {
+            bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+        }
+        return bitmap
+    }
 
-            setOnClickListener {
-                if (currentUa().isNotEmpty()) {
-                    copy(
-                        "user-agent=${currentUa()}",
-                        "mpv.conf setting"
-                    )
-                }
-            }
-        })
+    private fun copy(value: String, label: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+        Toast.makeText(this, "$label copied", Toast.LENGTH_SHORT).show()
+    }
 
-        layout.addView(TextView(this).apply {
-            text =
-                "\nVLC: Paste the User-Agent into " +
-                "VLC's HTTP User-Agent setting.\n\n" +
-                "mpv: Paste the mpv.conf setting " +
-                "into mpv's advanced configuration.\n\n" +
-                "Just+: Custom User-Agent support " +
-                "has not been verified.\n\n" +
-                "Copying does not automatically " +
-                "configure other players."
-            textSize = 15f
-        })
-
-        val scroll = ScrollView(this).apply {
-            addView(layout)
+    private fun titleText(text: String, size: Float, bold: Boolean = false, color: Int = Color.WHITE, gravity: Int = Gravity.START): TextView =
+        TextView(this).apply {
+            this.text = text
+            textSize = size
+            setTextColor(color)
+            this.gravity = gravity
+            if (bold) setTypeface(typeface, Typeface.BOLD)
         }
 
-        setContentView(scroll)
+    private fun bodyText(text: String, size: Float, color: Int = Color.rgb(177, 194, 220), bold: Boolean = false, gravity: Int = Gravity.START): TextView =
+        titleText(text, size, bold, color, gravity)
+
+    private fun iconText(symbol: String): TextView = TextView(this).apply {
+        text = symbol
+        textSize = 28f
+        setTextColor(Color.rgb(117, 169, 255))
+        gravity = Gravity.CENTER
     }
+
+    private fun buttonBg(primary: Boolean): GradientDrawable = GradientDrawable().apply {
+        setColor(if (primary) Color.rgb(55, 106, 242) else Color.rgb(39, 59, 90))
+        cornerRadius = dp(14).toFloat()
+    }
+
+    private fun separator(): View = View(this).apply {
+        setBackgroundColor(Color.argb(70, 152, 170, 205))
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
+    }
+
+    private fun space(heightDp: Int): View = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(1, dp(heightDp))
+    }
+
+    private fun spaceW(widthDp: Int): View = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(dp(widthDp), 1)
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 }

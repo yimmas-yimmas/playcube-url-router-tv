@@ -28,7 +28,7 @@
         <package android:name="org.videolan.vlc" />
         <package android:name="is.xyz.mpv" />
     </queries>
-    <application android:icon="@drawable/router_icon" android:banner="@drawable/router_banner" android:label="PlayCube URL Router" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
+    <application android:icon="@drawable/router_icon" android:banner="@drawable/router_banner" android:label="tvBOX Receiver" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
         <service android:name=".LinkReceiverService" android:exported="false" />
         <activity android:name=".InfoActivity" android:exported="true">
             <intent-filter>

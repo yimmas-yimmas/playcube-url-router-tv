@@ -100,17 +100,17 @@ class MainActivity : Activity() {
         header.addView(logo, LinearLayout.LayoutParams(dp(64), dp(64)))
         val heading = column().apply { setPadding(dp(14), 0, 0, 0) }
         heading.addView(text("Send to", 24f, Color.WHITE, true))
-        heading.addView(text("PlayCube", 28f, Color.rgb(70, 164, 255), true))
+        heading.addView(text("tvBOX", 28f, Color.rgb(70, 164, 255), true))
         header.addView(heading)
         content.addView(header); addSpace(8)
         content.addView(text("Send links. Watch on your TV.", 15f, muted))
         addSpace(26)
         val paired = isPaired()
         val connection = column().apply { background = shape(surface); pad(this, 18) }
-        connection.addView(text(if (paired) "●  PlayCube paired" else "○  Not connected", 19f, if (paired) Color.rgb(71, 228, 142) else Color.WHITE, true))
-        connection.addView(text(if (paired) "TV address: ${prefs.getString("host", "")}:8765" else "Scan the QR code on your TV to pair.", 13f, muted))
+        connection.addView(text(if (paired) "●  tvBOX paired" else "○  Not connected", 19f, if (paired) Color.rgb(71, 228, 142) else Color.WHITE, true))
+        connection.addView(text(if (paired) "tvBOX address: ${prefs.getString("host", "")}:8765" else "Scan the QR code on your TV to pair.", 13f, muted))
         content.addView(connection); addSpace(14)
-        content.addView(button(if (paired) "Scan new PlayCube QR" else "Scan QR Code") { scanQr() }, LinearLayout.LayoutParams(-1, dp(54)))
+        content.addView(button(if (paired) "Scan new tvBOX QR" else "Scan QR Code") { scanQr() }, LinearLayout.LayoutParams(-1, dp(54)))
         addSpace(12)
         if (paired) {
             content.addView(button("Test connection", false) { send("https://example.com", false) }, LinearLayout.LayoutParams(-1, dp(54)))
@@ -122,7 +122,7 @@ class MainActivity : Activity() {
         card("Recent links", "Re-send previously shared links", "◷") { showRecent() }
         card("Pairing settings", "Scan QR or forget this TV", "⚙") { pairingSettings() }
         addSpace(10)
-        status = text(if (paired) "Ready to receive shared links." else "Pair once, then Share → Send to PlayCube.", 13f, muted)
+        status = text(if (paired) "Ready to receive shared links." else "Pair once, then Share → Send to tvBOX.", 13f, muted)
         content.addView(status)
         addSpace(12)
         content.addView(text("Phone and TV must be on the same Wi-Fi. Keep the TV receiver running.", 12f, muted))
@@ -139,14 +139,14 @@ class MainActivity : Activity() {
                 val local = octets.size == 4 && octets.all { it in 0..255 } &&
                     (octets[0] == 10 || (octets[0] == 172 && octets[1] in 16..31) || (octets[0] == 192 && octets[1] == 168))
                 if (uri?.scheme != "http" || uri.port != 8765 || !local || token.isNullOrBlank()) {
-                    status.text = "Invalid PlayCube QR code. Scan the code displayed by the TV Router."
+                    status.text = "Invalid tvBOX QR code. Scan the code displayed by the TV Router."
                     return@addOnSuccessListener
                 }
                 prefs.edit().putString("host", host).putString("token", token).apply()
                 drawScreen()
                 val share = pendingShare
                 if (share != null) send(share, true)
-                else status.text = "Paired! Share any link using Send to PlayCube."
+                else status.text = "Paired! Share any link using Send to tvBOX."
             }
             .addOnCanceledListener { status.text = "QR scan cancelled." }
             .addOnFailureListener { status.text = "Scanner unavailable: ${it.localizedMessage}" }
@@ -164,7 +164,7 @@ class MainActivity : Activity() {
     }
     private fun pairingSettings() {
         AlertDialog.Builder(this).setTitle("Pairing settings")
-            .setItems(arrayOf("Scan new QR code", "Forget paired PlayCube")) { _, which ->
+            .setItems(arrayOf("Scan new QR code", "Forget paired tvBOX")) { _, which ->
                 if (which == 0) scanQr() else AlertDialog.Builder(this).setTitle("Forget this TV?")
                     .setMessage("You'll need to scan its QR code again.")
                     .setNegativeButton("Cancel", null)
@@ -191,10 +191,10 @@ class MainActivity : Activity() {
         if (parsed?.scheme !in listOf("http", "https") || parsed?.host.isNullOrBlank()) {
             status.text = "Invalid URL. Only http/https links are supported."; return
         }
-        if (!isPaired()) { pendingShare = link; status.text = "Pair with PlayCube first."; scanQr(); return }
+        if (!isPaired()) { pendingShare = link; status.text = "Pair with tvBOX first."; scanQr(); return }
         if (sending) return
         sending = true
-        status.text = "Sending to PlayCube…"
+        status.text = "Sending to tvBOX…"
         val host = prefs.getString("host", "")!!
         val token = prefs.getString("token", "")!!
         worker.execute {
@@ -214,12 +214,12 @@ class MainActivity : Activity() {
                 sending = false
                 if (result) {
                     saveHistory(link); pendingShare = null
-                    if (fromShare) { Toast.makeText(this, "Sent to PlayCube", Toast.LENGTH_SHORT).show(); finish() }
-                    else status.text = "✓ Sent to PlayCube"
+                    if (fromShare) { Toast.makeText(this, "Sent to tvBOX", Toast.LENGTH_SHORT).show(); finish() }
+                    else status.text = "✓ Sent to tvBOX"
                 } else {
-                    status.text = "Could not send. Check TV receiver, IP and Wi-Fi; re-scan QR if TV IP changed."
+                    status.text = "Could not send. Check the tvBOX receiver, IP and Wi-Fi; re-scan QR if the TV IP changed."
                     if (fromShare) AlertDialog.Builder(this).setTitle("Send failed")
-                        .setMessage("PlayCube did not respond. Start the TV receiver or re-pair if its IP changed.")
+                        .setMessage("tvBOX did not respond. Start the TV receiver or re-pair if its IP changed.")
                         .setPositiveButton("Retry") { _, _ -> send(link, true) }
                         .setNegativeButton("Keep open", null).show()
                 }
