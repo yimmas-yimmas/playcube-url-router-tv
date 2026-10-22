@@ -14,6 +14,23 @@ class LinkReceiverService : Service() {
     companion object {
         const val PORT = 8765
         const val CHANNEL = "router_receiver"
+        const val PREF_ENABLED = "receiver_enabled"
+
+        fun isEnabled(context: android.content.Context): Boolean =
+            context.getSharedPreferences("router_settings", MODE_PRIVATE)
+                .getBoolean(PREF_ENABLED, true) // Default ON, including upgrades
+
+        fun startIfEnabled(context: android.content.Context) {
+            if (!isEnabled(context)) return
+            // Service can be started from the app, after boot, and after updates.
+            // Android may restrict boot-time starts on some firmware; an app launch
+            // attempts again without altering the saved preference.
+            try {
+                context.startForegroundService(Intent(context, LinkReceiverService::class.java))
+            } catch (e: RuntimeException) {
+                android.util.Log.w("tvBOXReceiver", "Foreground receiver start blocked", e)
+            }
+        }
         fun token(context: android.content.Context): String {
             val prefs = context.getSharedPreferences("router_settings", MODE_PRIVATE)
             val existing = prefs.getString("receiver_token", null)
@@ -42,11 +59,16 @@ class LinkReceiverService : Service() {
             .setContentIntent(open).setOngoing(true).build()
         startForeground(1001, notification)
         running.set(true)
-        getSharedPreferences("router_settings", MODE_PRIVATE).edit().putBoolean("receiver_running", true).apply()
         worker = Thread { serve() }.also { it.start() }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!isEnabled(this)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
 
     private fun serve() {
         try {
@@ -154,7 +176,6 @@ class LinkReceiverService : Service() {
 
     override fun onDestroy() {
         running.set(false)
-        getSharedPreferences("router_settings", MODE_PRIVATE).edit().putBoolean("receiver_running", false).apply()
         try { server?.close() } catch (_: Exception) { }
         super.onDestroy()
     }

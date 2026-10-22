@@ -37,6 +37,9 @@ class InfoActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Default is ON. Launching the app also restores the receiver if Android
+        // previously terminated its process. A manual OFF selection is respected.
+        LinkReceiverService.startIfEnabled(this)
 
         val pendingUrl = prefs.getString("pending_received_url", null)
         if (!pendingUrl.isNullOrBlank()) {
@@ -158,11 +161,11 @@ class InfoActivity : Activity() {
             setPadding(dp(14), 0, dp(12), 0)
         }
         textCol.addView(titleText("Wi-Fi Receiver", 17f, true))
-        textCol.addView(bodyText("Receive URLs from Samsung phone", 13f))
+        textCol.addView(bodyText("Receive URLs from Mobile Phone", 13f))
         row.addView(textCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         val toggle = Switch(this).apply {
-            isChecked = prefs.getBoolean("receiver_running", false)
+            isChecked = LinkReceiverService.isEnabled(this@InfoActivity)
             setOnCheckedChangeListener { _, checked -> toggleReceiver(checked) }
         }
         row.addView(toggle)
@@ -225,7 +228,7 @@ class InfoActivity : Activity() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         val qr = ImageView(this).apply {
-            val size = dp(120)
+            val size = dp(180)
             layoutParams = LinearLayout.LayoutParams(size, size)
             setImageBitmap(buildQrBitmap("http://$ip:${LinkReceiverService.PORT}/?token=$token", 420))
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -282,13 +285,14 @@ class InfoActivity : Activity() {
     }
 
     private fun toggleReceiver(checked: Boolean) {
+        // Persist the user's choice; it survives app updates and reboots.
+        prefs.edit().putBoolean(LinkReceiverService.PREF_ENABLED, checked).apply()
         if (checked) {
-            startForegroundService(Intent(this, LinkReceiverService::class.java))
-            Toast.makeText(this, "Receiver started on port ${LinkReceiverService.PORT}", Toast.LENGTH_SHORT).show()
+            LinkReceiverService.startIfEnabled(this)
+            Toast.makeText(this, "Receiver enabled on port ${LinkReceiverService.PORT}", Toast.LENGTH_SHORT).show()
         } else {
             stopService(Intent(this, LinkReceiverService::class.java))
-            prefs.edit().putBoolean("receiver_running", false).apply()
-            Toast.makeText(this, "Receiver stopped", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Receiver disabled", Toast.LENGTH_SHORT).show()
         }
         recreate()
     }

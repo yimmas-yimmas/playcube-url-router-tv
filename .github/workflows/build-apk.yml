@@ -22,12 +22,12 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build both APKs
-        run: gradle :app:assembleDebug :samsung-app:assembleDebug --stacktrace
+        run: gradle :receiver_app:assembleDebug :phone-sender-app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: playcube-tv-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: tvbox-receiver-apk
+          path: receiver_app/build/outputs/apk/debug/receiver_app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
           name: send-to-playcube-samsung-apk
-          path: samsung-app/build/outputs/apk/debug/samsung-app-debug.apk
+          path: phone-sender-app/build/outputs/apk/debug/phone-sender-app-debug.apk
