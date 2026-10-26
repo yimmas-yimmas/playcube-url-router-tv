@@ -9,8 +9,8 @@ android {
         applicationId = "com.playcube.sender"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.2.1"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

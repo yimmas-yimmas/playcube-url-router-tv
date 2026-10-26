@@ -9,6 +9,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
@@ -34,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private var pendingShare: String? = null
     private var sending = false
+    private val selectableItems = mutableListOf<View>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +68,33 @@ class MainActivity : Activity() {
         setColor(color); cornerRadius = dp(radius).toFloat()
         if (stroke != null) setStroke(dp(1), stroke)
     }
+    // Use stateful backgrounds so hardware DPAD/keyboard focus is plainly visible.
+    private fun focusBackground(primary: Boolean = false): StateListDrawable {
+        fun drawable(highlight: Boolean): GradientDrawable = shape(
+            if (highlight) Color.rgb(31, 95, 174) else if (primary) blue else surface,
+            16,
+            if (highlight) Color.rgb(75, 226, 255) else Color.rgb(62, 86, 116)
+        ).apply {
+            setStroke(dp(if (highlight) 3 else 1), if (highlight) Color.rgb(75, 226, 255) else Color.rgb(62, 86, 116))
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), drawable(true))
+            addState(intArrayOf(android.R.attr.state_pressed), drawable(true))
+            addState(intArrayOf(), drawable(false))
+        }
+    }
+    private fun registerSelectable(view: View) {
+        view.id = View.generateViewId()
+        view.isFocusable = true
+        view.isClickable = true
+        view.isFocusableInTouchMode = true
+        view.setOnFocusChangeListener { selected, focused ->
+            selected.animate().scaleX(if (focused) 1.015f else 1f)
+                .scaleY(if (focused) 1.015f else 1f).setDuration(110).start()
+            selected.elevation = if (focused) dp(10).toFloat() else 0f
+        }
+        selectableItems.add(view)
+    }
     private fun text(value: String, size: Float = 15f, color: Int = Color.WHITE, bold: Boolean = false) = TextView(this).apply {
         text = value; textSize = size; setTextColor(color)
         if (bold) setTypeface(null, Typeface.BOLD)
@@ -75,7 +104,12 @@ class MainActivity : Activity() {
     private fun pad(v: View, a: Int = 16, b: Int = a) { v.setPadding(dp(a), dp(b), dp(a), dp(b)) }
     private fun addSpace(height: Int) { content.addView(View(this), LinearLayout.LayoutParams(1, dp(height))) }
     private fun card(title: String, subtitle: String, symbol: String, onClick: () -> Unit) {
-        val r = row().apply { background = shape(surface); pad(this, 16, 18); isClickable = true; isFocusable = true; setOnClickListener { onClick() } }
+        val r = row().apply {
+            background = focusBackground()
+            pad(this, 16, 18)
+            registerSelectable(this)
+            setOnClickListener { onClick() }
+        }
         val glyph = text(symbol, 25f, Color.rgb(93, 167, 255)).apply { gravity = Gravity.CENTER }
         r.addView(glyph, LinearLayout.LayoutParams(dp(40), dp(46)))
         val c = column().apply { setPadding(dp(12), 0, 0, 0) }
@@ -87,11 +121,14 @@ class MainActivity : Activity() {
     }
     private fun button(label: String, primary: Boolean = true, onClick: () -> Unit): Button = Button(this).apply {
         text = label; isAllCaps = false; textSize = 15f; setTextColor(Color.WHITE)
-        background = shape(if (primary) blue else surface, 16)
+        backgroundTintList = null
+        background = focusBackground(primary)
+        registerSelectable(this)
         setOnClickListener { onClick() }
         minHeight = dp(54)
     }
     private fun drawScreen() {
+        selectableItems.clear()
         val scroller = ScrollView(this).apply { isFillViewport = true; setBackgroundColor(bg) }
         content = column().apply { pad(this, 22, 24) }
         scroller.addView(content); setContentView(scroller)
@@ -126,6 +163,16 @@ class MainActivity : Activity() {
         content.addView(status)
         addSpace(12)
         content.addView(text("Phone and TV must be on the same Wi-Fi. Keep the TV receiver running.", 12f, muted))
+
+        // Explicit vertical order makes remote navigation consistent even after
+        // the paired/unpaired screen adds or removes actions.
+        selectableItems.forEachIndexed { index, view ->
+            if (index > 0) view.nextFocusUpId = selectableItems[index - 1].id
+            if (index < selectableItems.lastIndex) view.nextFocusDownId = selectableItems[index + 1].id
+        }
+        scroller.post {
+            if (!isFinishing && pendingShare == null) selectableItems.firstOrNull()?.requestFocus()
+        }
     }
     private fun isPaired() = !prefs.getString("host", null).isNullOrBlank() && !prefs.getString("token", null).isNullOrBlank()
     private fun scanQr() {

@@ -5,7 +5,7 @@ Two Android applications in one GitHub repository:
 - `receiver_app/`: **tvBOX Receiver** (Google TV / TCL PlayCube).
 - `phone-sender-app/`: **Send to tvBOX** (Android mobile companion).
 
-## tvBOX Receiver changes (v1.4.0)
+## tvBOX Receiver changes (v1.4.1)
 
 - **Wi-Fi Receiver is enabled by default.** The first launch starts a foreground receiver service on port `8765`.
 - If enabled, the receiver attempts to restart after `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED` (TV reboot and app update). Service uses `START_STICKY` if Android terminates it.
@@ -42,3 +42,24 @@ Android TV may stop apps under severe power management, when force-stopped, or b
 The pairing token travels over unencrypted HTTP on the local Wi-Fi; only use on a trusted network and keep the QR private.
 
 This repository is source code and still needs GitHub Actions compilation and a test on PlayCube.
+
+## Remote / keyboard focus (this update)
+
+- Both the **tvBOX Receiver** and **Send to tvBOX** interfaces highlight the focused
+  action with a bright cyan 3dp border and vivid blue background; focus also
+  enlarges the selected row slightly.
+- DPAD up/down follows the vertical action list, even when the screen scrolls.
+- Press OK/Enter to activate the highlighted row.
+- The receiver Wi-Fi switch is controlled by its entire focusable row, avoiding
+  an invisible child-switch focus target.
+- The right-hand **Copy** controls on TV also show focus when selected.
+- No existing pairing token, package ID, or share protocol was changed.
+
+### Focus check after installation
+
+1. On tvBOX Receiver, **Wi-Fi Receiver** is initially highlighted with a cyan outline.
+2. Press **Down** repeatedly. The highlight moves to Open in, Access Token, Refresh QR/IP,
+   Open Last Received Link, then Advanced Settings. **OK** still selects the item.
+3. On Send to tvBOX (with hardware keyboard/remote), arrow through the pairing button,
+   connection test (when paired), and quick action cards.
+4. If the highlight fails to change on a specific popup dialog, capture the dialog title.

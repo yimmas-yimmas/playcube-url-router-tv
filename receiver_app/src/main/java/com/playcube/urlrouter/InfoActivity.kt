@@ -10,6 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -98,17 +99,25 @@ class InfoActivity : Activity() {
         contentRow.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         contentRow.addView(right, LinearLayout.LayoutParams(dp(330), ViewGroup.LayoutParams.WRAP_CONTENT))
 
-        left.addView(buildReceiverCard())
-        left.addView(space(10))
-        left.addView(buildActionCard("◎", "Open in", "Choose default app for links", defaultPlayerLabel()) { chooseDefaultPlayer() })
-        left.addView(space(10))
-        left.addView(buildActionCard("◈", "Access Token", "Used to authenticate incoming links", LinkReceiverService.token(this)) { tokenActions() })
-        left.addView(space(10))
-        left.addView(buildActionCard("↻", "Refresh QR / IP address", "Update local IP and regenerate QR code", "") { recreate() })
-        left.addView(space(10))
-        left.addView(buildActionCard("◷", "Open Last Received Link", "Launch the most recent URL", "") { openLastReceived() })
-        left.addView(space(10))
-        left.addView(buildActionCard("⚙", "Advanced Settings", "Notifications, browser and User-Agent", "") { advancedSettings() })
+        // Keep remote DPAD navigation in a predictable top-to-bottom order.
+        // Focus styling is applied to the entire card, not just its text.
+        val remoteRows = listOf(
+            buildReceiverCard(),
+            buildActionCard("◎", "Open in", "Choose default app for links", defaultPlayerLabel()) { chooseDefaultPlayer() },
+            buildActionCard("◈", "Access Token", "Used to authenticate incoming links", LinkReceiverService.token(this)) { tokenActions() },
+            buildActionCard("↻", "Refresh QR / IP address", "Update local IP and regenerate QR code", "") { recreate() },
+            buildActionCard("◷", "Open Last Received Link", "Launch the most recent URL", "") { openLastReceived() },
+            buildActionCard("⚙", "Advanced Settings", "Notifications, browser and User-Agent", "") { advancedSettings() }
+        )
+        remoteRows.forEachIndexed { index, view ->
+            view.id = View.generateViewId()
+            if (index > 0) left.addView(space(10))
+            left.addView(view)
+        }
+        remoteRows.forEachIndexed { index, view ->
+            if (index > 0) view.nextFocusUpId = remoteRows[index - 1].id
+            if (index < remoteRows.lastIndex) view.nextFocusDownId = remoteRows[index + 1].id
+        }
 
         val ip = localIp() ?: "Not connected"
         val token = LinkReceiverService.token(this)
@@ -118,6 +127,8 @@ class InfoActivity : Activity() {
         right.addView(space(12))
         right.addView(bodyText("Make sure your phone and tvBOX are on the same Wi-Fi network.", 13f))
 
+        // Start with a visibly selected item on the television.
+        scroll.post { if (!isFinishing) remoteRows.first().requestFocus() }
         return scroll
     }
 
@@ -166,12 +177,14 @@ class InfoActivity : Activity() {
 
         val toggle = Switch(this).apply {
             isChecked = LinkReceiverService.isEnabled(this@InfoActivity)
+            // The remote should focus the whole highlighted row, not this tiny switch.
+            isFocusable = false
+            isClickable = false
             setOnCheckedChangeListener { _, checked -> toggleReceiver(checked) }
         }
         row.addView(toggle)
         card.addView(row)
-        card.isClickable = true
-        card.isFocusable = true
+        enableRemoteFocus(card)
         card.setOnClickListener { toggle.isChecked = !toggle.isChecked }
         return card
     }
@@ -204,8 +217,7 @@ class InfoActivity : Activity() {
         row.addView(trailCol)
 
         card.addView(row)
-        card.isClickable = true
-        card.isFocusable = true
+        enableRemoteFocus(card)
         card.setOnClickListener { onClick() }
         return card
     }
@@ -265,7 +277,9 @@ class InfoActivity : Activity() {
             isAllCaps = false
             textSize = 12f
             setTextColor(Color.WHITE)
-            background = buttonBg(false)
+            backgroundTintList = null
+            background = focusableCopyButtonBackground()
+            isFocusable = true
             setOnClickListener { onCopy() }
         }
         row.addView(copyBtn, LinearLayout.LayoutParams(dp(74), dp(38)))
@@ -274,14 +288,54 @@ class InfoActivity : Activity() {
 
     private fun baseCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = GradientDrawable(
+        background = remoteCardBackground()
+        setPadding(dp(18), dp(16), dp(18), dp(16))
+    }
+
+    // Native state drawable responds immediately to DPAD focus changes.
+    // The cyan outline and brighter blue surface make the selected row obvious.
+    private fun remoteCardBackground(): StateListDrawable {
+        fun shape(selected: Boolean): GradientDrawable = GradientDrawable(
             GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(Color.argb(225, 24, 38, 61), Color.argb(225, 20, 35, 56), Color.argb(225, 18, 31, 50))
+            if (selected) intArrayOf(Color.rgb(35, 83, 153), Color.rgb(24, 64, 125))
+            else intArrayOf(Color.rgb(24, 38, 61), Color.rgb(18, 31, 50))
         ).apply {
             cornerRadius = dp(16).toFloat()
-            setStroke(dp(1), Color.argb(90, 115, 145, 190))
+            setStroke(
+                dp(if (selected) 3 else 1),
+                if (selected) Color.rgb(70, 212, 255) else Color.argb(90, 115, 145, 190)
+            )
         }
-        setPadding(dp(18), dp(16), dp(18), dp(16))
+        val highlighted = shape(true)
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), highlighted)
+            addState(intArrayOf(android.R.attr.state_pressed), highlighted)
+            addState(intArrayOf(), shape(false))
+        }
+    }
+
+    private fun focusableCopyButtonBackground(): StateListDrawable {
+        fun shape(selected: Boolean) = GradientDrawable().apply {
+            setColor(if (selected) Color.rgb(34, 118, 217) else Color.rgb(39, 59, 90))
+            cornerRadius = dp(12).toFloat()
+            setStroke(dp(if (selected) 3 else 1), if (selected) Color.rgb(82, 220, 255) else Color.rgb(74, 100, 150))
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), shape(true))
+            addState(intArrayOf(android.R.attr.state_pressed), shape(true))
+            addState(intArrayOf(), shape(false))
+        }
+    }
+
+    private fun enableRemoteFocus(view: View) {
+        view.isFocusable = true
+        view.isClickable = true
+        view.isFocusableInTouchMode = true
+        view.setOnFocusChangeListener { selectedView, focused ->
+            selectedView.animate().scaleX(if (focused) 1.015f else 1f)
+                .scaleY(if (focused) 1.015f else 1f).setDuration(110).start()
+            selectedView.elevation = if (focused) dp(10).toFloat() else 0f
+        }
     }
 
     private fun toggleReceiver(checked: Boolean) {
