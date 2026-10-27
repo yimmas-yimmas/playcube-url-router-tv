@@ -63,3 +63,20 @@ This repository is source code and still needs GitHub Actions compilation and a 
 3. On Send to tvBOX (with hardware keyboard/remote), arrow through the pairing button,
    connection test (when paired), and quick action cards.
 4. If the highlight fails to change on a specific popup dialog, capture the dialog title.
+
+## Permanent Android APK signing (2026-10-27)
+
+Both `receiver_app` and `phone-sender-app` use the **same stable private PKCS#12 signing key** in GitHub Actions. The key is **not committed** to the repository. The GitHub workflow requires these two GitHub Actions **repository secrets**:
+
+1. `TVBOX_KEYSTORE_BASE64` — paste the **entire single line** from the private `keystore-base64.txt` file supplied separately.
+2. `TVBOX_SIGNING_PASSWORD` — paste the password from the private `signing-password.txt` file supplied separately.
+
+In GitHub, navigate to **Settings → Secrets and variables → Actions → New repository secret**. Create both secrets; then open **Actions → Build TV and Samsung APKs → Run workflow**.
+
+Do not upload the private signing ZIP, `.p12` or credentials to GitHub or an issue. Save a private offline backup of the key and password. If the key is lost, you cannot update APKs already signed with it without uninstalling them first.
+
+Artifacts keep their existing names (`tvbox-receiver-apk`, `send-to-playcube-samsung-apk`) and APK paths. Both Debug variants are signed with the stable certificate when built on Actions. The workflow checks that both signatures match.
+
+**One-time migration:** The installed v1.4.2 tvBOX Receiver APK and previous phone APKs were signed with transient debug keys. Switching to the new signing key **requires uninstalling each affected app once**. This may erase pairing tokens and settings. After the new stably signed version is installed, subsequent `adb install -r` upgrades built from the same GitHub secrets will work, without another uninstall, provided you retain the same application ID and key.
+
+Android debug builds run locally outside Actions continue to use the normal local debug keystore unless `TVBOX_KEYSTORE_FILE` and `TVBOX_SIGNING_PASSWORD` are set; do not distribute those locally signed builds as upgrades to the GitHub builds.

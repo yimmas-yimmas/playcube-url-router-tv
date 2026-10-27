@@ -21,8 +21,41 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build both APKs
+      - name: Prepare persistent app-signing key
+        shell: bash
+        env:
+          TVBOX_KEYSTORE_BASE64: ${{ secrets.TVBOX_KEYSTORE_BASE64 }}
+          TVBOX_SIGNING_PASSWORD: ${{ secrets.TVBOX_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TVBOX_KEYSTORE_BASE64" || -z "$TVBOX_SIGNING_PASSWORD" ]]; then
+            echo "::error::Set repository secrets TVBOX_KEYSTORE_BASE64 and TVBOX_SIGNING_PASSWORD before running the build."
+            exit 1
+          fi
+          printf '%s' "$TVBOX_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/tvbox-signing.p12"
+          chmod 600 "$RUNNER_TEMP/tvbox-signing.p12"
+          keytool -list -keystore "$RUNNER_TEMP/tvbox-signing.p12" -storetype PKCS12 -storepass "$TVBOX_SIGNING_PASSWORD" -alias tvbox-signing > /dev/null
+          echo "TVBOX_KEYSTORE_FILE=$RUNNER_TEMP/tvbox-signing.p12" >> "$GITHUB_ENV"
+      - name: Build both APKs with stable signing
+        env:
+          TVBOX_SIGNING_PASSWORD: ${{ secrets.TVBOX_SIGNING_PASSWORD }}
         run: gradle :receiver_app:assembleDebug :phone-sender-app:assembleDebug --stacktrace
+      - name: Verify both APK signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          signer="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          tv_apk="receiver_app/build/outputs/apk/debug/receiver_app-debug.apk"
+          phone_apk="phone-sender-app/build/outputs/apk/debug/phone-sender-app-debug.apk"
+          "$signer" verify --verbose "$tv_apk"
+          "$signer" verify --verbose "$phone_apk"
+          tv_cert=$("$signer" verify --print-certs "$tv_apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          phone_cert=$("$signer" verify --print-certs "$phone_apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          if [[ -z "$tv_cert" || "$tv_cert" != "$phone_cert" ]]; then
+            echo "::error::TV and phone APKs do not use the same persistent signing certificate."
+            exit 1
+          fi
+          echo "Both APKs signed with certificate SHA-256: $tv_cert"
       - uses: actions/upload-artifact@v4
         with:
           name: tvbox-receiver-apk
@@ -31,3 +64,7 @@ jobs:
         with:
           name: send-to-playcube-samsung-apk
           path: phone-sender-app/build/outputs/apk/debug/phone-sender-app-debug.apk
+      - name: Remove signing key from runner
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/tvbox-signing.p12"
