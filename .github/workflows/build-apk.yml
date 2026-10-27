@@ -32,9 +32,36 @@ jobs:
             echo "::error::Set repository secrets TVBOX_KEYSTORE_BASE64 and TVBOX_SIGNING_PASSWORD before running the build."
             exit 1
           fi
-          printf '%s' "$TVBOX_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/tvbox-signing.p12"
+          # Tolerate line breaks from copy/pasting the Base64 text and print
+          # actionable validation failures without revealing signing secrets.
+          python3 - <<'PY'
+          import base64, binascii, os, pathlib, sys
+          value = ''.join(os.environ['TVBOX_KEYSTORE_BASE64'].split())
+          try:
+              decoded = base64.b64decode(value, validate=True)
+          except (binascii.Error, ValueError):
+              print('::error title=Invalid signing key::TVBOX_KEYSTORE_BASE64 is not valid Base64. Copy the text inside keystore-base64.txt, not the ZIP file or its name.')
+              sys.exit(1)
+          if len(decoded) < 512 or decoded[0] != 0x30:
+              print('::error title=Invalid signing key::Decoded keystore is not a valid-looking PKCS12 file. Recopy keystore-base64.txt.')
+              sys.exit(1)
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'tvbox-signing.p12'
+          path.write_bytes(decoded)
+          print('PKCS12 signing key decoded successfully.')
+          PY
           chmod 600 "$RUNNER_TEMP/tvbox-signing.p12"
-          keytool -list -keystore "$RUNNER_TEMP/tvbox-signing.p12" -storetype PKCS12 -storepass "$TVBOX_SIGNING_PASSWORD" -alias tvbox-signing > /dev/null
+          # The provided password text file ends with a newline. Strip accidental
+          # leading/trailing whitespace when checking, as Gradle does below.
+          cleaned_password="$(python3 -c 'import os;print(os.environ["TVBOX_SIGNING_PASSWORD"].strip(),end="")')"
+          if ! keytool -list -keystore "$RUNNER_TEMP/tvbox-signing.p12" -storetype PKCS12 -storepass "$cleaned_password" > /dev/null 2>&1; then
+            echo "::error title=Incorrect keystore password::Decoded keystore could not be opened. Replace TVBOX_SIGNING_PASSWORD with the contents of signing-password.txt, not the Base64 text."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/tvbox-signing.p12" -storetype PKCS12 -storepass "$cleaned_password" -alias tvbox-signing > /dev/null 2>&1; then
+            echo "::error title=Incorrect keystore alias::The PKCS12 key does not contain the expected tvbox-signing alias. Recopy the correct keystore-base64.txt."
+            exit 1
+          fi
+          echo "PKCS12 password and signing alias verified."
           echo "TVBOX_KEYSTORE_FILE=$RUNNER_TEMP/tvbox-signing.p12" >> "$GITHUB_ENV"
       - name: Build both APKs with stable signing
         env:

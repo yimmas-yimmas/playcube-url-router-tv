@@ -8,7 +8,7 @@ android {
     // Stable APK signing when GitHub Actions provides the secure keystore.
     // Local developers may still build with the normal Android debug key.
     val signingKeystoreFile = System.getenv("TVBOX_KEYSTORE_FILE")
-    val signingKeystorePassword = System.getenv("TVBOX_SIGNING_PASSWORD")
+    val signingKeystorePassword = System.getenv("TVBOX_SIGNING_PASSWORD")?.trim()
     if (!signingKeystoreFile.isNullOrBlank() && !signingKeystorePassword.isNullOrBlank()) {
         signingConfigs {
             create("tvboxPersistent") {
