@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.IBinder
 import android.os.Build
+import android.provider.Settings
+import android.util.Log
 import java.net.ServerSocket
 import java.net.Socket
 import java.security.SecureRandom
@@ -142,10 +144,14 @@ class LinkReceiverService : Service() {
                     // it, launching InfoActivity from the home screen consumes this URL.
                     getSharedPreferences("router_settings", MODE_PRIVATE).edit()
                         .putString("pending_received_url", url).putString("last_received_url", url).commit()
+                    val overlayAllowed = Settings.canDrawOverlays(this)
+                    Log.i("tvBOXReceiver", "Received URL; overlayAllowed=$overlayAllowed; requesting RouterActivity launch")
                     try {
                         startActivity(launch)
-                    } catch (_: Exception) {
-                        // Background activity starts can fail on some Android TV builds.
+                        // No exception does not mean ActivityTaskManager allowed the launch.
+                        Log.i("tvBOXReceiver", "startActivity called; check ActivityTaskManager for BAL_BLOCK")
+                    } catch (e: Exception) {
+                        Log.w("tvBOXReceiver", "Background activity start failed", e)
                     }
                     // Android TV may prohibit background activity starts. A notification
                     // provides a reliable, user-initiated way to open the URL.

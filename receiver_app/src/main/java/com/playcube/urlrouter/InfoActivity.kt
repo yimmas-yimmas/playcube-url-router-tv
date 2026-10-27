@@ -13,6 +13,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -29,6 +30,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import java.net.NetworkInterface
 
 class InfoActivity : Activity() {
+    private var returningFromOverlaySettings = false
     private val prefs by lazy { getSharedPreferences("router_settings", MODE_PRIVATE) }
 
     companion object {
@@ -54,6 +56,14 @@ class InfoActivity : Activity() {
         }
 
         setContentView(buildScreen())
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (returningFromOverlaySettings) {
+            returningFromOverlaySettings = false
+            recreate()
+        }
     }
 
     private fun buildScreen(): View {
@@ -103,6 +113,12 @@ class InfoActivity : Activity() {
         // Focus styling is applied to the entire card, not just its text.
         val remoteRows = listOf(
             buildReceiverCard(),
+            buildActionCard(
+                "▣",
+                "Background launch permission",
+                "Allow VLC/browser to open while Receiver is in background",
+                if (Settings.canDrawOverlays(this)) "Allowed" else "Not granted"
+            ) { openBackgroundLaunchSettings() },
             buildActionCard("◎", "Open in", "Choose default app for links", defaultPlayerLabel()) { chooseDefaultPlayer() },
             buildActionCard("◈", "Access Token", "Used to authenticate incoming links", LinkReceiverService.token(this)) { tokenActions() },
             buildActionCard("↻", "Refresh QR / IP address", "Update local IP and regenerate QR code", "") { recreate() },
@@ -399,6 +415,48 @@ class InfoActivity : Activity() {
             .show()
     }
 
+    private fun openBackgroundLaunchSettings() {
+        if (Settings.canDrawOverlays(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("Background launch permission")
+                .setMessage("Display over other apps permission is already granted. Android TV may still impose additional restrictions.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Allow background launching")
+            .setMessage(
+                "Android 14 is currently blocking tvBOX Receiver from opening VLC or a browser while in the background. " +
+                "Grant 'Display over other apps' in system settings to test Android's permitted background-launch exception. " +
+                "This is a powerful permission: grant it only because you trust this app."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Open settings") { _, _ ->
+                returningFromOverlaySettings = true
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    })
+                } catch (_: Exception) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                    } catch (_: Exception) {
+                        try {
+                            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.parse("package:$packageName")
+                            })
+                        } catch (_: Exception) {
+                            returningFromOverlaySettings = false
+                            Toast.makeText(this, "System permission screen is unavailable. Use ADB to grant it.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+            .show()
+    }
+
     private fun advancedSettings() {
         val items = arrayOf(
             "Choose website browser",
@@ -406,7 +464,8 @@ class InfoActivity : Activity() {
             "Copy User-Agent for VLC",
             "Copy mpv.conf setting",
             "Start Wi-Fi receiver",
-            "Stop Wi-Fi receiver"
+            "Stop Wi-Fi receiver",
+            "Background launch permission"
         )
         AlertDialog.Builder(this)
             .setTitle("Advanced settings")
@@ -418,6 +477,7 @@ class InfoActivity : Activity() {
                     3 -> copy("user-agent=${currentUa()}", "mpv.conf setting")
                     4 -> toggleReceiver(true)
                     5 -> toggleReceiver(false)
+                    6 -> openBackgroundLaunchSettings()
                 }
             }
             .show()
