@@ -107,24 +107,24 @@ class InfoActivity : Activity() {
         }
 
         contentRow.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        contentRow.addView(right, LinearLayout.LayoutParams(dp(330), ViewGroup.LayoutParams.WRAP_CONTENT))
+        val screenWidthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
+        val qrColumnWidth = (screenWidthDp * 0.42f).toInt().coerceIn(300, 420)
+        contentRow.addView(right, LinearLayout.LayoutParams(dp(qrColumnWidth), ViewGroup.LayoutParams.WRAP_CONTENT))
 
         // Keep remote DPAD navigation in a predictable top-to-bottom order.
         // Focus styling is applied to the entire card, not just its text.
-        val remoteRows = listOf(
-            buildReceiverCard(),
-            buildActionCard(
-                "▣",
-                "Background launch permission",
-                "Allow VLC/browser to open while Receiver is in background",
-                if (Settings.canDrawOverlays(this)) "Allowed" else "Not granted"
-            ) { openBackgroundLaunchSettings() },
-            buildActionCard("◎", "Open in", "Ask each time or choose a default app", defaultPlayerLabel()) { chooseDefaultPlayer() },
-            buildActionCard("◈", "Access Token", "Used to authenticate incoming links", LinkReceiverService.token(this)) { tokenActions() },
-            buildActionCard("↻", "Refresh QR / IP address", "Update local IP and regenerate QR code", "") { recreate() },
-            buildActionCard("◷", "Open Last Received Link", "Launch the most recent URL", "") { openLastReceived() },
-            buildActionCard("⚙", "Advanced Settings", "Notifications, browser and User-Agent", "") { advancedSettings() }
-        )
+        val remoteRows = buildList {
+            add(buildReceiverCard())
+            add(buildActionCard("◎", "Open in", "Choose browser, video player, or ask every time", defaultPlayerLabel()) { chooseDefaultPlayer() })
+            add(buildActionCard("◷", "Last received link", "Open or copy the latest URL", "") { lastLinkActions() })
+            if (!Settings.canDrawOverlays(this)) {
+                add(buildActionCard(
+                    "▣", "Background launch permission",
+                    "Allow links to open when Receiver is in the background", "Not granted"
+                ) { openBackgroundLaunchSettings() })
+            }
+            add(buildActionCard("⚙", "Advanced Settings", "Browser, User-Agent and QR refresh", "") { advancedSettings() })
+        }
         remoteRows.forEachIndexed { index, view ->
             view.id = View.generateViewId()
             if (index > 0) left.addView(space(10))
@@ -138,10 +138,10 @@ class InfoActivity : Activity() {
         val ip = localIp() ?: "Not connected"
         val token = LinkReceiverService.token(this)
         right.addView(buildQrPanel(ip, token))
-        right.addView(space(14))
-        right.addView(buildInfoPanel(ip, token))
         right.addView(space(12))
-        right.addView(bodyText("Make sure your phone and tvBOX are on the same Wi-Fi network.", 13f))
+        right.addView(buildInfoPanel(ip))
+        right.addView(space(10))
+        right.addView(bodyText("Phone and tvBOX must be on the same Wi-Fi.", 13f, gravity = Gravity.CENTER_HORIZONTAL))
 
         // Start with a visibly selected item on the television.
         scroll.post { if (!isFinishing) remoteRows.first().requestFocus() }
@@ -256,25 +256,24 @@ class InfoActivity : Activity() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         val qr = ImageView(this).apply {
-            val size = dp(180)
+            val screenWidthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
+            val screenHeightDp = resources.displayMetrics.heightPixels / resources.displayMetrics.density
+            val availableWidth = (screenWidthDp * 0.42f).toInt().coerceIn(300, 420) - 48
+            val size = dp(minOf(availableWidth, (screenHeightDp * 0.62f).toInt()).coerceAtLeast(220))
             layoutParams = LinearLayout.LayoutParams(size, size)
-            setImageBitmap(buildQrBitmap("http://$ip:${LinkReceiverService.PORT}/?token=$token", 420))
+            setImageBitmap(buildQrBitmap("http://$ip:${LinkReceiverService.PORT}/?token=$token", 900))
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
         qrHolder.addView(qr)
         panel.addView(qrHolder)
         panel.addView(space(10))
-        panel.addView(bodyText("Opens URL sender with IP and token automatically filled in.", 13f, gravity = Gravity.CENTER_HORIZONTAL))
+        panel.addView(bodyText("Scan with Send to tvBOX to pair.", 13f, gravity = Gravity.CENTER_HORIZONTAL))
         return panel
     }
 
-    private fun buildInfoPanel(ip: String, token: String): View {
+    private fun buildInfoPanel(ip: String): View {
         val panel = baseCard()
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(infoRow("IP Address", ip) { copy(ip, "IP address") })
-        col.addView(separator())
-        col.addView(infoRow("Access Token", token) { copy(token, "Access token") })
-        panel.addView(col)
+        panel.addView(infoRow("IP Address", ip) { copy(ip, "IP address") })
         return panel
     }
 
@@ -368,15 +367,34 @@ class InfoActivity : Activity() {
     }
 
     private fun openLastReceived() {
-        val url = prefs.getString("last_received_url", null)
-        if (url.isNullOrBlank()) {
-            Toast.makeText(this, "No received link yet", Toast.LENGTH_SHORT).show()
-            return
-        }
+        val url = lastReceivedUrl() ?: return
         startActivity(Intent(this, RouterActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             data = Uri.parse(url)
         })
+    }
+
+    private fun lastReceivedUrl(): String? {
+        val url = prefs.getString("last_received_url", null)
+        if (url.isNullOrBlank()) {
+            Toast.makeText(this, "No received link yet", Toast.LENGTH_SHORT).show()
+            return null
+        }
+        return url
+    }
+
+    private fun copyLastReceived() {
+        lastReceivedUrl()?.let { copy(it, "Last received link") }
+    }
+
+    private fun lastLinkActions() {
+        if (lastReceivedUrl() == null) return
+        AlertDialog.Builder(this)
+            .setTitle("Last received link")
+            .setItems(arrayOf("Open link", "Copy link")) { _, which ->
+                if (which == 0) openLastReceived() else copyLastReceived()
+            }
+            .show()
     }
 
     private fun defaultPlayerLabel(): String = when (prefs.getString("open_mode", "ask")) {
@@ -407,21 +425,6 @@ class InfoActivity : Activity() {
                     .putString("open_mode", modes[index])
                     .remove("preferred_app")
                     .apply()
-                recreate()
-            }
-            .show()
-    }
-
-    private fun tokenActions() {
-        val token = LinkReceiverService.token(this)
-        AlertDialog.Builder(this)
-            .setTitle("Access token")
-            .setMessage(token)
-            .setNeutralButton("Copy") { _, _ -> copy(token, "Access token") }
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Regenerate") { _, _ ->
-                prefs.edit().remove("receiver_token").apply()
-                Toast.makeText(this, "Access token regenerated", Toast.LENGTH_SHORT).show()
                 recreate()
             }
             .show()
@@ -471,6 +474,8 @@ class InfoActivity : Activity() {
 
     private fun advancedSettings() {
         val items = arrayOf(
+            "Copy last received link",
+            "Refresh QR / IP address",
             "Choose website browser",
             "Edit HTTP User-Agent",
             "Copy User-Agent for VLC",
@@ -483,13 +488,15 @@ class InfoActivity : Activity() {
             .setTitle("Advanced settings")
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> chooseBrowser()
-                    1 -> editUserAgent()
-                    2 -> copy(currentUa(), "User-Agent")
-                    3 -> copy("user-agent=${currentUa()}", "mpv.conf setting")
-                    4 -> toggleReceiver(true)
-                    5 -> toggleReceiver(false)
-                    6 -> openBackgroundLaunchSettings()
+                    0 -> copyLastReceived()
+                    1 -> recreate()
+                    2 -> chooseBrowser()
+                    3 -> editUserAgent()
+                    4 -> copy(currentUa(), "User-Agent")
+                    5 -> copy("user-agent=${currentUa()}", "mpv.conf setting")
+                    6 -> toggleReceiver(true)
+                    7 -> toggleReceiver(false)
+                    8 -> openBackgroundLaunchSettings()
                 }
             }
             .show()
