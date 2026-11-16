@@ -32,8 +32,8 @@ android {
         applicationId = "com.playcube.urlrouter"
         minSdk = 26
         targetSdk = 28 // Keeps generic web-link chooser behavior on Android TV; not for Play Store release.
-        versionCode = 8
-        versionName = "1.4.3"
+        versionCode = 9
+        versionName = "1.5.0"
     }
 
     compileOptions {

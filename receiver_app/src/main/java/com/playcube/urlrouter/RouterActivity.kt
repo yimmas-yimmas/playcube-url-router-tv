@@ -19,6 +19,7 @@ class RouterActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("router_settings", MODE_PRIVATE) }
 
     private data class Player(val id: String, val label: String, val packageName: String)
+    private data class AppChoice(val target: String, val label: String, val packageName: String)
 
     private val knownPlayers = listOf(
         Player("vlc", "VLC", "org.videolan.vlc"),
@@ -36,6 +37,21 @@ class RouterActivity : Activity() {
             prefs.edit().remove("pending_received_url").commit()
         }
         if (uri.scheme?.lowercase() !in listOf("http", "https")) { finish(); return }
+        when (prefs.getString("open_mode", "ask")) {
+            "ask" -> showAppDialog(uri)
+            "preferred" -> {
+                val preferred = prefs.getString("preferred_app", null)
+                if (preferred == null || !openAppChoice(preferred, uri)) showAppDialog(uri)
+            }
+            "vlc" -> {
+                if (launchPlayer("vlc", uri)) finish() else showAppDialog(uri)
+            }
+            "browser" -> launchBrowser(uri)
+            else -> openAutomatically(uri)
+        }
+    }
+
+    private fun openAutomatically(uri: Uri) {
         val path = uri.path?.lowercase().orEmpty()
         if (!(path.endsWith(".m3u8") || path.endsWith("master.txt"))) {
             launchBrowser(uri)
@@ -73,11 +89,97 @@ class RouterActivity : Activity() {
             val matches = pm.queryIntentActivities(probe, 0)
             for (match in matches) {
                 val pkg = match.activityInfo?.packageName ?: continue
-                if (pkg == packageName || pkg == "mark.via.gp" || found.values.any { it.packageName == pkg }) continue
+                if (pkg == packageName || pkg in BrowserApps.installed(this).map { it.packageName } || found.values.any { it.packageName == pkg }) continue
                 found[pkg] = Player(pkg, match.loadLabel(pm).toString(), pkg)
             }
         }
         return found.values.toList()
+    }
+
+
+    // A unified chooser for *all* received HTTP(S) links, including extensionless streams.
+    // Keeping browsers and media players together avoids guessing the URL's content type.
+    private fun showAppDialog(uri: Uri) {
+        val browsers = BrowserApps.installed(this)
+        val browserPackages = browsers.map { it.packageName }.toSet()
+        val options = availablePlayers(uri)
+            .filterNot { it.packageName in browserPackages }
+            .map { AppChoice("player:${it.id}", "${it.label} (media player)", it.packageName) } +
+            browsers.map { AppChoice("browser:${it.packageName}", "${it.label} (browser)", it.packageName) }
+
+        if (options.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setMessage("No compatible browser or media player found.")
+                .setPositiveButton("OK") { _, _ -> finish() }
+                .setOnCancelListener { finish() }
+                .show()
+            return
+        }
+
+        val remember = CheckBox(this).apply {
+            text = "Always use selected app"
+            setPadding(24, 12, 24, 12)
+            isFocusable = true
+        }
+
+        val adapter = object : ArrayAdapter<AppChoice>(this, android.R.layout.simple_list_item_1, options) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val option = options[position]
+                val row = LinearLayout(this@RouterActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(24, 12, 24, 12)
+                    minimumHeight = 72
+                }
+                row.addView(ImageView(this@RouterActivity).apply {
+                    try { setImageDrawable(packageManager.getApplicationIcon(option.packageName)) }
+                    catch (_: Exception) { setImageResource(android.R.drawable.ic_media_play) }
+                    layoutParams = LinearLayout.LayoutParams(48, 48).apply { rightMargin = 20 }
+                })
+                row.addView(TextView(this@RouterActivity).apply {
+                    text = option.label
+                    textSize = 18f
+                })
+                return row
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Open link with")
+            .setAdapter(adapter) { _, which ->
+                val option = options[which]
+                if (openAppChoice(option.target, uri)) {
+                    if (remember.isChecked) {
+                        prefs.edit()
+                            .putString("open_mode", "preferred")
+                            .putString("preferred_app", option.target)
+                            .apply()
+                    }
+                    finish()
+                } else {
+                    showAppDialog(uri)
+                }
+            }
+            .setView(remember)
+            .setNegativeButton("Cancel") { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
+    }
+
+    private fun openAppChoice(target: String, uri: Uri): Boolean {
+        return when {
+            target.startsWith("browser:") -> {
+                val pkg = target.removePrefix("browser:")
+                if (BrowserApps.installed(this).none { it.packageName == pkg }) false
+                else openBrowser(uri, pkg)
+            }
+            target.startsWith("player:") -> {
+                val id = target.removePrefix("player:")
+                if (availablePlayers(uri).none { it.id == id }) false
+                else launchPlayer(id, uri)
+            }
+            else -> false
+        }
     }
 
     private fun showPlayerDialog(uri: Uri, players: List<Player>) {
@@ -133,27 +235,21 @@ class RouterActivity : Activity() {
     }
 
     private fun launchPlayer(id: String, uri: Uri): Boolean {
+        val path = uri.path?.lowercase().orEmpty()
+        val mime = if (path.endsWith(".m3u8") || path.endsWith("master.txt")) {
+            "application/vnd.apple.mpegurl"
+        } else {
+            "video/*"
+        }
         val playerIntent = Intent(Intent.ACTION_VIEW).apply {
-            data = uri
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             when (id) {
-                "vlc" -> {
-                    setClassName("org.videolan.vlc", "org.videolan.vlc.StartActivity")
-                    setDataAndType(uri, "application/vnd.apple.mpegurl")
-                }
-                "mpv" -> {
-                    setPackage("is.xyz.mpv")
-                    setDataAndType(uri, "application/vnd.apple.mpegurl")
-                }
-                "just" -> {
-                    setClassName("pl.waskysoft.player", "com.brouken.player.PlayerActivity")
-                    setDataAndType(uri, "application/vnd.apple.mpegurl")
-                }
-                else -> {
-                    setPackage(id)
-                    setDataAndType(uri, "application/vnd.apple.mpegurl")
-                }
+                "vlc" -> setClassName("org.videolan.vlc", "org.videolan.vlc.StartActivity")
+                "mpv" -> setPackage("is.xyz.mpv")
+                "just" -> setClassName("pl.waskysoft.player", "com.brouken.player.PlayerActivity")
+                else -> setPackage(id)
             }
+            setDataAndType(uri, mime)
         }
         return try {
             startActivity(playerIntent)

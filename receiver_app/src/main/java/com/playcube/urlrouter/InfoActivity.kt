@@ -119,7 +119,7 @@ class InfoActivity : Activity() {
                 "Allow VLC/browser to open while Receiver is in background",
                 if (Settings.canDrawOverlays(this)) "Allowed" else "Not granted"
             ) { openBackgroundLaunchSettings() },
-            buildActionCard("◎", "Open in", "Choose default app for links", defaultPlayerLabel()) { chooseDefaultPlayer() },
+            buildActionCard("◎", "Open in", "Ask each time or choose a default app", defaultPlayerLabel()) { chooseDefaultPlayer() },
             buildActionCard("◈", "Access Token", "Used to authenticate incoming links", LinkReceiverService.token(this)) { tokenActions() },
             buildActionCard("↻", "Refresh QR / IP address", "Update local IP and regenerate QR code", "") { recreate() },
             buildActionCard("◷", "Open Last Received Link", "Launch the most recent URL", "") { openLastReceived() },
@@ -379,22 +379,34 @@ class InfoActivity : Activity() {
         })
     }
 
-    private fun defaultPlayerLabel(): String = when (prefs.getString("default_player", null)) {
-        "vlc" -> "VLC"
-        "mpv" -> "mpv"
-        "just" -> "Just+"
+    private fun defaultPlayerLabel(): String = when (prefs.getString("open_mode", "ask")) {
+        "vlc" -> "Always VLC"
+        "browser" -> "Always browser"
+        "auto" -> "Auto-detect"
+        "preferred" -> {
+            val saved = prefs.getString("preferred_app", "").orEmpty()
+            when {
+                saved == "player:vlc" -> "Always VLC"
+                saved == "player:mpv" -> "Always mpv"
+                saved == "player:just" -> "Always Just+"
+                saved.startsWith("browser:") -> "Always browser"
+                saved.startsWith("player:") -> "Always selected player"
+                else -> "Ask every time"
+            }
+        }
         else -> "Ask every time"
     }
 
     private fun chooseDefaultPlayer() {
-        val labels = arrayOf("Ask every time", "VLC", "mpv-android", "Just+ Player")
-        val ids = arrayOf<String?>(null, "vlc", "mpv", "just")
+        val labels = arrayOf("Ask every time (all apps)", "Always VLC", "Always browser", "Auto-detect (legacy routing)")
+        val modes = arrayOf("ask", "vlc", "browser", "auto")
         AlertDialog.Builder(this)
-            .setTitle("Default video player")
+            .setTitle("Open received links with")
             .setItems(labels) { _, index ->
-                prefs.edit().apply {
-                    if (ids[index] == null) remove("default_player") else putString("default_player", ids[index])
-                }.apply()
+                prefs.edit()
+                    .putString("open_mode", modes[index])
+                    .remove("preferred_app")
+                    .apply()
                 recreate()
             }
             .show()
