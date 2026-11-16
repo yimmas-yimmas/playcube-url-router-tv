@@ -117,7 +117,7 @@ class InfoActivity : Activity() {
             add(buildReceiverCard())
             add(buildActionCard("◎", "Open in", "Choose browser, video player, or ask every time", defaultPlayerLabel()) { chooseDefaultPlayer() })
             add(buildActionCard("◷", "Last received link", "Open or copy the latest URL", "") { lastLinkActions() })
-            if (!Settings.canDrawOverlays(this)) {
+            if (!Settings.canDrawOverlays(this@InfoActivity)) {
                 add(buildActionCard(
                     "▣", "Background launch permission",
                     "Allow links to open when Receiver is in the background", "Not granted"
